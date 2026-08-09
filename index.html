@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Streak.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Instrument+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+html[data-theme="light"]{
+  --ink:#1F1A2E; --paper:#F0EDF5; --card:#FBFAFD; --line:#DCD6E6;
+  --muted:#6E667F; --field:#FFFFFF; --grid:#E4DFEC; --tick-fg:#fff;
+  --banner-bg:#FFF4D6; --banner-line:#E8D8A0; --banner-fg:#6A5A20;
+  --in:#1E8F6E; --out:#D6336C;
+}
+html[data-theme="dark"]{
+  --ink:#EFEBF7; --paper:#141020; --card:#1D1830; --line:#302A45;
+  --muted:#9A92AE; --field:#241E3A; --grid:#282240; --tick-fg:#141020;
+  --banner-bg:#2A2413; --banner-line:#4A3F1E; --banner-fg:#E0CE93;
+  --in:#3FD9A8; --out:#F2648F;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--paper); color:var(--ink);
+  font-family:"Instrument Sans",system-ui,sans-serif; font-size:16px; line-height:1.5;
+  -webkit-font-smoothing:antialiased; transition:background .25s ease,color .25s ease;
+}
+.wrap{max-width:960px;margin:0 auto;padding:24px 20px 90px}
+h1,h2,h3{font-family:"Bricolage Grotesque",system-ui,sans-serif;margin:0;line-height:1.05;letter-spacing:-0.02em}
+button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px;border-radius:4px}
+.mono{font-family:"DM Mono",ui-monospace,monospace}
+.hidden{display:none !important}
+
+.themebtn{
+  position:fixed;top:14px;right:14px;z-index:30;width:38px;height:38px;border-radius:12px;
+  border:1.5px solid var(--line);background:var(--card);display:grid;place-items:center;
+}
+.themebtn svg{width:17px;height:17px;stroke:var(--ink);fill:none;stroke-width:1.8;stroke-linecap:round}
+
+/* ---------- gate ---------- */
+.gate{min-height:100dvh;display:grid;place-items:center;padding:24px}
+.gate-inner{width:100%;max-width:440px}
+.gate h1{font-size:clamp(40px,11vw,64px);font-weight:800}
+.gate .sub{color:var(--muted);margin:12px 0 28px;font-size:15px}
+.field{display:flex;gap:8px}
+.field input{flex:1;padding:14px 16px;border:1.5px solid var(--line);border-radius:10px;background:var(--field)}
+.field input::placeholder{color:var(--muted);opacity:.7}
+.btn{padding:14px 20px;border-radius:10px;background:var(--ink);color:var(--paper);font-weight:600;transition:transform .12s}
+.btn:hover{transform:translateY(-1px)}
+.err{color:var(--out);font-size:14px;margin-top:12px;min-height:20px}
+.pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-top:26px}
+.pcard{position:relative;padding:24px 18px;border-radius:14px;border:1.5px solid var(--line);background:var(--card);text-align:left;transition:transform .14s}
+.pcard:hover{transform:translateY(-3px)}
+.pcard .dot{width:10px;height:10px;border-radius:50%;display:block;margin-bottom:12px}
+.pcard .who{font-family:"Bricolage Grotesque";font-size:21px;font-weight:700;display:block}
+.pcard .st{font-size:13px;color:var(--muted);margin-top:4px;display:block;font-family:"DM Mono"}
+.pcard .x{position:absolute;top:8px;right:10px;color:var(--muted);font-size:18px;line-height:1;opacity:0;transition:opacity .15s}
+.pcard:hover .x{opacity:.6}
+.pcard .x:hover{opacity:1;color:var(--out)}
+.pnew{border-style:dashed;display:grid;place-items:center;color:var(--muted);min-height:112px;font-weight:500}
+
+/* ---------- top bar + nav ---------- */
+.topbar{display:flex;justify-content:space-between;align-items:baseline;gap:14px;flex-wrap:wrap;padding-right:48px}
+.topbar h1{font-size:27px;font-weight:800}
+.today{color:var(--muted);font-size:14px}
+.switch{font-size:14px;color:var(--muted);text-decoration:underline;text-underline-offset:3px}
+nav{display:inline-flex;gap:2px;background:var(--line);padding:3px;border-radius:12px;margin:20px 0 24px}
+nav button{padding:9px 20px;border-radius:9px;font-size:15px;font-weight:500;color:var(--muted)}
+nav button[aria-selected="true"]{background:var(--card);color:var(--ink)}
+
+/* ---------- shared bits ---------- */
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:14px;padding:20px;margin-bottom:18px}
+.card h2{font-size:19px;font-weight:700;margin-bottom:2px}
+.card .hint{font-size:13px;color:var(--muted);margin-bottom:16px}
+.tag{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.chartbox{position:relative;height:250px}
+.banner{background:var(--banner-bg);border:1.5px solid var(--banner-line);color:var(--banner-fg);padding:12px 16px;border-radius:12px;font-size:14px;margin-bottom:18px}
+.empty{color:var(--muted);font-size:14px;padding:10px 0}
+
+/* ---------- habits ---------- */
+.board{margin:4px 0 26px}
+.duel-labels{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:10px}
+.duel-labels .side{display:flex;flex-direction:column;gap:2px}
+.duel-labels .side.right{align-items:flex-end}
+.num{font-family:"DM Mono";font-size:32px;line-height:1}
+.num small{font-size:12px;letter-spacing:.06em}
+.bar{height:18px;border-radius:999px;overflow:hidden;display:flex;background:var(--line)}
+.bar span{display:block;transition:width .5s cubic-bezier(.22,1,.36,1)}
+.verdict{margin-top:10px;font-size:14px;color:var(--muted)}
+.rank{display:flex;align-items:center;gap:12px;padding:7px 0}
+.rank .rname{width:120px;flex:0 0 auto;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank .rbar{flex:1;height:12px;border-radius:999px;background:var(--line);overflow:hidden}
+.rank .rbar i{display:block;height:100%;transition:width .5s cubic-bezier(.22,1,.36,1)}
+.rank .rnum{font-family:"DM Mono";font-size:13px;color:var(--muted);width:52px;text-align:right}
+.rank.self .rname{font-weight:600}
+.habit{display:flex;align-items:center;gap:14px;padding:11px 0;border-top:1px solid var(--line)}
+.habit:first-of-type{border-top:none}
+.tick{width:26px;height:26px;border-radius:8px;border:1.5px solid var(--line);flex:0 0 auto;display:grid;place-items:center;transition:background .18s,border-color .18s,transform .18s}
+.tick svg{width:14px;height:14px;opacity:0;transform:scale(.6);transition:opacity .18s,transform .18s;stroke:var(--tick-fg)}
+.tick[aria-pressed="true"]{background:var(--me);border-color:var(--me)}
+.tick[aria-pressed="true"] svg{opacity:1;transform:scale(1)}
+.tick:active{transform:scale(.9)}
+.habit .name{flex:1}
+.habit.done .name{color:var(--muted);text-decoration:line-through}
+.habit .streak{font-family:"DM Mono";font-size:13px;color:var(--muted)}
+.del{color:var(--muted);font-size:18px;padding:0 4px;line-height:1;opacity:.5}
+.del:hover{opacity:1;color:var(--out)}
+.lane{display:grid;grid-template-columns:repeat(30,1fr);gap:3px;margin-top:6px}
+.lane i{aspect-ratio:1;border-radius:3px;background:var(--line)}
+.lane i.on{background:var(--me)}
+.lane i.half{opacity:.45;background:var(--me)}
+.lane-label{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:8px}
+.tabs{display:inline-flex;gap:2px;background:var(--line);padding:3px;border-radius:10px;margin-bottom:16px}
+.tabs button{padding:7px 16px;border-radius:8px;font-size:14px;font-weight:500;color:var(--muted)}
+.tabs button[aria-selected="true"]{background:var(--card);color:var(--ink)}
+.addrow{display:flex;gap:8px;margin-top:16px}
+.addrow input{flex:1;padding:11px 14px;border:1.5px solid var(--line);border-radius:10px;background:var(--field)}
+.addrow button{padding:11px 18px;border-radius:10px;background:var(--ink);color:var(--paper);font-weight:600}
+
+/* ---------- money ---------- */
+.monthbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.monthbar h2{font-size:24px;font-weight:800}
+.arrow{width:36px;height:36px;border-radius:10px;border:1.5px solid var(--line);background:var(--card);font-size:18px;line-height:1}
+.totals{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px}
+.tot{background:var(--card);border:1.5px solid var(--line);border-radius:14px;padding:16px}
+.tot .lbl{font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.tot .val{font-family:"DM Mono";font-size:21px;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tot.in .val{color:var(--in)} .tot.out .val{color:var(--out)}
+.txform{display:grid;grid-template-columns:110px 1fr 1fr;gap:8px}
+.txform input,.txform select{padding:11px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--field);width:100%}
+.txform .full{grid-column:1/-1}
+.txform button{padding:12px;border-radius:10px;background:var(--ink);color:var(--paper);font-weight:600;grid-column:1/-1}
+.tx{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line)}
+.tx:first-of-type{border-top:none}
+.tx .cat{flex:1;min-width:0}
+.tx .cat b{font-weight:500;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tx .cat span{font-size:12.5px;color:var(--muted)}
+.tx .amt{font-family:"DM Mono";font-size:15px;white-space:nowrap}
+.tx .amt.in{color:var(--in)} .tx .amt.out{color:var(--out)}
+.catrow{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:14px}
+.catrow .cname{width:110px;flex:0 0 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.catrow .cbar{flex:1;height:10px;border-radius:999px;background:var(--line);overflow:hidden}
+.catrow .cbar i{display:block;height:100%;background:var(--out)}
+.catrow .cval{font-family:"DM Mono";font-size:13px;color:var(--muted);white-space:nowrap}
+
+/* ---------- settings ---------- */
+.perm{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:14px 0;border-top:1px solid var(--line)}
+.perm:first-child{border-top:none}
+.perm .pname{display:flex;align-items:center;gap:9px;font-weight:600}
+.perm .pname i{width:9px;height:9px;border-radius:50%;display:block}
+.boxes{display:flex;gap:8px;flex-wrap:wrap}
+.chk{display:flex;align-items:center;gap:7px;font-size:14px;padding:7px 12px;border:1.5px solid var(--line);border-radius:9px;cursor:pointer;background:var(--field)}
+.chk input{accent-color:var(--ink);width:15px;height:15px;margin:0}
+.chk.locked{opacity:.5;cursor:default}
+
+/* ---------- embedded journal ---------- */
+#journal{
+  width:100%;height:calc(100dvh - 210px);min-height:560px;
+  border:1.5px solid var(--line);border-radius:14px;background:var(--card);display:block;
+}
+
+@media (max-width:600px){
+  .totals{grid-template-columns:1fr}
+  .txform{grid-template-columns:1fr 1fr}
+  .num{font-size:27px}
+  .lane{grid-template-columns:repeat(15,1fr)}
+  .rank .rname{width:84px}
+  nav button{padding:9px 14px;font-size:14px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none !important}}
+</style>
+</head>
+<body>
+
+<!-- ============ CONFIG — edit these four lines ============ -->
+<script>
+const CONFIG = {
+  SUPABASE_URL: "https://atoxkkdscmgcqekdasbw.supabase.co",         // e.g. "https://abcdefgh.supabase.co"
+  SUPABASE_ANON_KEY: "sb_publishable_2Apnl7qBdSaFp1ogif6u6w_-gKLa0NC",    // the anon public key
+  PASSWORD: "AyaMed2003",     // shared password — both of you type this
+  PRIVATE_PASSWORD: "AyaMed2003" // admin password — opens Settings, where you grant access
+};
+</script>
+<!-- ======================================================== -->
+
+<button class="themebtn" id="theme" aria-label="Switch to dark mode">
+  <svg id="theme-icon" viewBox="0 0 24 24"></svg>
+</button>
+
+<div id="gate" class="gate">
+  <div class="gate-inner">
+    <h1>Streak.</h1>
+    <p class="sub">One password, a profile each, one running scoreboard. Longest live streak wins.</p>
+    <div class="field" id="pwrow">
+      <input id="pw" type="password" placeholder="Shared password" autocomplete="current-password">
+      <button class="btn" id="enter">Enter</button>
+    </div>
+    <p class="err" id="gate-err"></p>
+    <div class="pick hidden" id="pick"></div>
+  </div>
+</div>
+
+<main id="app" class="wrap hidden">
+  <div id="demo-banner" class="banner hidden">Running on sample data — nothing is saved yet. Add your Supabase URL and key at the top of the file to make it real.</div>
+
+  <div class="topbar">
+    <div>
+      <h1 id="hi"></h1>
+      <p class="today" id="date"></p>
+    </div>
+    <button class="switch" id="switch">Switch profile</button>
+  </div>
+
+  <nav role="tablist" id="nav">
+    <button role="tab" id="nav-habits" aria-selected="true">Habits</button>
+    <button role="tab" id="nav-money" aria-selected="false">Money</button>
+    <button role="tab" id="nav-trading" aria-selected="false">Trading</button>
+    <button role="tab" id="nav-settings" aria-selected="false">Settings</button>
+  </nav>
+
+  <!-- ===================== HABITS ===================== -->
+  <section id="view-habits">
+    <div class="board" id="board"></div>
+
+    <div class="card">
+      <h2>Today</h2>
+      <p class="hint">A day counts toward your streak only when every habit is ticked.</p>
+      <div id="habits"></div>
+      <div class="addrow">
+        <input id="newhabit" placeholder="Add a habit — e.g. Read 20 pages" maxlength="60">
+        <button id="addbtn">Add</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Last 30 days</h2>
+      <p class="hint" id="lane-hint"></p>
+      <div class="lane" id="lane"></div>
+      <div class="lane-label"><span>30 days ago</span><span>Today</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Performance</h2>
+      <p class="hint">Share of your own habits completed each day.</p>
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tab-compare" aria-selected="true">Compare</button>
+        <button role="tab" id="tab-solo" aria-selected="false">Just me</button>
+      </div>
+      <div class="chartbox"><canvas id="habitchart"></canvas></div>
+    </div>
+  </section>
+
+  <!-- ===================== MONEY ===================== -->
+  <section id="view-money" class="hidden">
+    <div id="money-body">
+      <div class="monthbar">
+        <button class="arrow" id="prevmonth" aria-label="Previous month">‹</button>
+        <h2 id="monthlabel"></h2>
+        <button class="arrow" id="nextmonth" aria-label="Next month">›</button>
+      </div>
+
+      <div class="totals">
+        <div class="tot in"><div class="lbl">In</div><div class="val" id="t-in">—</div></div>
+        <div class="tot out"><div class="lbl">Out</div><div class="val" id="t-out">—</div></div>
+        <div class="tot"><div class="lbl">Left over</div><div class="val" id="t-net">—</div></div>
+      </div>
+
+      <div class="card">
+        <h2>Add a transaction</h2>
+        <p class="hint">Money in or out, tagged with a category so the month adds up.</p>
+        <div class="txform">
+          <select id="tx-kind">
+            <option value="out">Out</option>
+            <option value="in">In</option>
+          </select>
+          <input id="tx-amount" type="number" inputmode="decimal" step="0.01" min="0" placeholder="Amount">
+          <input id="tx-day" type="date">
+          <input id="tx-cat" class="full" list="cats" placeholder="Category — e.g. Food, Rent, Postry">
+          <datalist id="cats"></datalist>
+          <input id="tx-note" class="full" placeholder="Note (optional)" maxlength="80">
+          <button id="tx-add">Add transaction</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Where it went</h2>
+        <p class="hint">Spending this month, biggest category first.</p>
+        <div id="catbars"></div>
+      </div>
+
+      <div class="card">
+        <h2>This month</h2>
+        <p class="hint" id="tx-count"></p>
+        <div id="txlist"></div>
+      </div>
+
+      <div class="card">
+        <h2>Last 6 months</h2>
+        <p class="hint">In against out, so you can see the trend rather than one month in isolation.</p>
+        <div class="chartbox"><canvas id="moneychart"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== TRADING ===================== -->
+  <section id="view-trading" class="hidden">
+    <iframe id="journal" title="Trading journal" src="about:blank"></iframe>
+    <p class="hint" style="margin-top:10px">The journal keeps its own sign-in and its own database. Once you sign in on a device it stays signed in.</p>
+  </section>
+
+  <!-- ===================== SETTINGS ===================== -->
+  <section id="view-settings" class="hidden">
+    <div id="settings-lock" class="card">
+      <h2>Settings</h2>
+      <p class="hint">Deciding who sees what is locked. Enter the admin password to open it.</p>
+      <div class="field">
+        <input id="privpw" type="password" placeholder="Admin password">
+        <button class="btn" id="privbtn">Unlock</button>
+      </div>
+      <p class="err" id="priv-err"></p>
+    </div>
+
+    <div id="settings-body" class="hidden">
+      <div class="card">
+        <h2>Who sees what</h2>
+        <p class="hint">Tick a section to give that profile access to it. Habits stays on for everyone.</p>
+        <div id="perms"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+/* ================= setup ================= */
+const DEMO = !CONFIG.SUPABASE_URL || !CONFIG.SUPABASE_ANON_KEY;
+const db = DEMO ? null : supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+const PALETTE = ["#E8497A","#22A6A6","#E8A03C","#7C6BF0","#4FBF6A","#D96BD9","#4EA8E8","#E0654A"];
+const MONEY = new Intl.NumberFormat("fr-MA",{style:"currency",currency:"MAD",maximumFractionDigits:0});
+
+let profiles=[], habits=[], logs=[], txs=[];
+let me=null, view="habits", mode="compare", unlocked=false;
+let habitChart=null, moneyChart=null;
+let cursor = new Date(); cursor.setDate(1);
+
+const todayISO = () => new Date().toLocaleDateString("en-CA");
+const shiftDay = (iso,n)=>{const d=new Date(iso+"T12:00:00");d.setDate(d.getDate()+n);return d.toLocaleDateString("en-CA");};
+const lastDays = n => Array.from({length:n},(_,i)=>shiftDay(todayISO(),-(n-1-i)));
+const profileOf = id => profiles.find(p=>p.id===id) || {name:"—",color:"#888"};
+const esc = s => String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const monthKey = d => d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
+
+/* ================= theme ================= */
+const SUN='<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/>';
+const MOON='<path d="M20 14.5A8.5 8.5 0 019.5 4a8.5 8.5 0 1010.5 10.5z"/>';
+function setTheme(t){
+  document.documentElement.dataset.theme=t;
+  document.getElementById("theme-icon").innerHTML = t==="dark"?SUN:MOON;
+  document.getElementById("theme").setAttribute("aria-label", t==="dark"?"Switch to light mode":"Switch to dark mode");
+  if (habitChart) renderHabitChart();
+  if (moneyChart) renderMoneyChart();
+}
+setTheme(window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark":"light");
+document.getElementById("theme").onclick=()=>setTheme(document.documentElement.dataset.theme==="dark"?"light":"dark");
+
+/* ================= demo seed ================= */
+function seedDemo(){
+  profiles=[{id:"p1",name:"mohamed",color:PALETTE[0],sections:["habits","money","trading"]},
+            {id:"p2",name:"aya",color:PALETTE[1],sections:["habits"]}];
+  habits=[
+    {id:"h1",profile_id:"p1",name:"Workout"},{id:"h2",profile_id:"p1",name:"Read 20 pages"},
+    {id:"h3",profile_id:"p2",name:"Morning walk"},{id:"h4",profile_id:"p2",name:"No sugar"},{id:"h5",profile_id:"p2",name:"Journal"}
+  ];
+  logs=[];
+  lastDays(30).forEach((day,i)=>habits.forEach(h=>{
+    const luck = h.profile_id==="p1"?0.8:0.72;
+    if (i>26 || Math.random()<luck) logs.push({habit_id:h.id,day});
+  }));
+  txs=[];
+  const cats=[["Food",1],["Transport",1],["Rent",1],["Bills",1],["Shopping",1],["Postry",1]];
+  for(let m=0;m<6;m++){
+    const base=new Date(); base.setDate(1); base.setMonth(base.getMonth()-m);
+    txs.push({id:"t"+m+"a",kind:"in",amount:6000+Math.round(Math.random()*1500),category:"Salary",note:"",day:monthKey(base)+"-01"});
+    txs.push({id:"t"+m+"b",kind:"in",amount:800+Math.round(Math.random()*900),category:"Postry",note:"poster sales",day:monthKey(base)+"-14"});
+    for(let k=0;k<7;k++){
+      const c=cats[Math.floor(Math.random()*cats.length)][0];
+      txs.push({id:"t"+m+"-"+k,kind:"out",amount:100+Math.round(Math.random()*900),category:c,note:"",
+        day:monthKey(base)+"-"+String(2+Math.floor(Math.random()*25)).padStart(2,"0")});
+    }
+  }
+}
+
+/* ================= data ================= */
+async function load(){
+  if (DEMO){ if(!profiles.length) seedDemo(); return true; }
+  const since = shiftDay(todayISO(),-59);
+  const [p,h,l,t] = await Promise.all([
+    db.from("profiles").select("*").order("created_at"),
+    db.from("habits").select("*").order("created_at"),
+    db.from("logs").select("habit_id, day").gte("day",since),
+    db.from("transactions").select("*").order("day",{ascending:false})
+  ]);
+  const bad = [p,h,l,t].find(r=>r.error);
+  if (bad){
+    document.getElementById("gate-err").textContent = "Database error: "+bad.error.message;
+    return false;
+  }
+  profiles=p.data; habits=h.data; logs=l.data; txs=t.data;
+  return true;
+}
+
+async function addProfile(name){
+  const color = PALETTE[profiles.length % PALETTE.length];
+  if (DEMO){ profiles.push({id:"p"+Date.now(),name,color,sections:["habits"]}); return; }
+  const {data,error}=await db.from("profiles").insert({name,color,sections:["habits"]}).select().single();
+  if (error) return alert("Couldn't create that profile.\n\n"+error.message);
+  profiles.push(data);
+}
+async function removeProfile(id){
+  if (!DEMO){ const {error}=await db.from("profiles").delete().eq("id",id);
+    if (error) return alert("Couldn't delete that profile.\n\n"+error.message); }
+  const ids=habits.filter(h=>h.profile_id===id).map(h=>h.id);
+  profiles=profiles.filter(p=>p.id!==id);
+  habits=habits.filter(h=>h.profile_id!==id);
+  logs=logs.filter(l=>!ids.includes(l.habit_id));
+}
+async function addHabit(name){
+  if (DEMO){ habits.push({id:"h"+Date.now(),profile_id:me,name}); return; }
+  const {data,error}=await db.from("habits").insert({profile_id:me,name}).select().single();
+  if (error) return alert("Couldn't add that habit.\n\n"+error.message);
+  habits.push(data);
+}
+async function removeHabit(id){
+  if (!DEMO){ const {error}=await db.from("habits").delete().eq("id",id);
+    if (error) return alert("Couldn't delete that habit.\n\n"+error.message); }
+  habits=habits.filter(h=>h.id!==id); logs=logs.filter(l=>l.habit_id!==id);
+}
+async function toggle(habitId,day,on){
+  if (on){
+    if (!DEMO){
+      const {error}=await db.from("logs").insert({habit_id:habitId,day});
+      if (error && error.code!=="23505"){ alert("Couldn't save that tick.\n\n"+error.message); return; }
+    }
+    logs.push({habit_id:habitId,day});
+  } else {
+    if (!DEMO){
+      const {error}=await db.from("logs").delete().eq("habit_id",habitId).eq("day",day);
+      if (error){ alert("Couldn't remove that tick.\n\n"+error.message); return; }
+    }
+    logs=logs.filter(l=>!(l.habit_id===habitId&&l.day===day));
+  }
+}
+async function addTx(tx){
+  if (DEMO){ txs.unshift({id:"t"+Date.now(),...tx}); return true; }
+  const {data,error}=await db.from("transactions").insert(tx).select().single();
+  if (error){ alert("Couldn't save that transaction.\n\n"+error.message); return false; }
+  txs.unshift(data); return true;
+}
+async function removeTx(id){
+  if (!DEMO){ const {error}=await db.from("transactions").delete().eq("id",id);
+    if (error) return alert("Couldn't delete that transaction.\n\n"+error.message); }
+  txs=txs.filter(t=>t.id!==id);
+}
+
+/* ================= habit maths ================= */
+const habitsOf = pid => habits.filter(h=>h.profile_id===pid);
+const isDone = (hid,day) => logs.some(l=>l.habit_id===hid&&l.day===day);
+function ratio(pid,day){ const hs=habitsOf(pid); if(!hs.length) return 0;
+  return hs.filter(h=>isDone(h.id,day)).length/hs.length; }
+const perfect = (pid,day) => habitsOf(pid).length>0 && ratio(pid,day)===1;
+function streak(pid){ const t=todayISO(); let c=perfect(pid,t)?t:shiftDay(t,-1),n=0;
+  while(perfect(pid,c)&&n<3650){n++;c=shiftDay(c,-1);} return n; }
+function habitStreak(id){ const t=todayISO(); let c=isDone(id,t)?t:shiftDay(t,-1),n=0;
+  while(isDone(id,c)&&n<3650){n++;c=shiftDay(c,-1);} return n; }
+
+/* ================= render: habits ================= */
+function renderHabitsTab(){
+  renderBoard(); renderHabitList(); renderLane(); renderHabitChart();
+}
+function renderBoard(){
+  const box=document.getElementById("board");
+  if (profiles.length<2){ box.innerHTML='<p class="verdict">Add a second profile to start competing.</p>'; return; }
+  if (profiles.length===2){
+    const [x,y]=profiles, a=streak(x.id), b=streak(y.id), tot=a+b;
+    const pa = tot===0?50:(a/tot)*100;
+    let v;
+    if (tot===0) v="No streaks running. Tick everything today and one starts tomorrow.";
+    else if (a===b) v="Dead level at "+a+" days each.";
+    else { const w=a>b?x:y, l=a>b?y:x, d=Math.abs(a-b);
+      v=esc(w.name)+" leads "+esc(l.name)+" by "+d+(d===1?" day.":" days."); }
+    box.innerHTML=
+      '<div class="duel-labels">'+
+        '<div class="side"><span class="tag">'+esc(x.name)+'</span><span class="num">'+a+'<small> days</small></span></div>'+
+        '<div class="side right"><span class="tag">'+esc(y.name)+'</span><span class="num">'+b+'<small> days</small></span></div>'+
+      '</div>'+
+      '<div class="bar"><span style="width:'+pa+'%;background:'+x.color+'"></span>'+
+      '<span style="width:'+(100-pa)+'%;background:'+y.color+'"></span></div>'+
+      '<p class="verdict">'+v+'</p>';
+    return;
+  }
+  const rows=profiles.map(p=>({p,s:streak(p.id)})).sort((m,n)=>n.s-m.s);
+  const max=Math.max(1,rows[0].s);
+  box.innerHTML='<p class="tag" style="margin-bottom:12px">Current streaks</p>'+
+    rows.map(r=>'<div class="rank'+(r.p.id===me?" self":"")+'">'+
+      '<span class="rname">'+esc(r.p.name)+'</span>'+
+      '<span class="rbar"><i style="width:'+(r.s/max*100)+'%;background:'+r.p.color+'"></i></span>'+
+      '<span class="rnum">'+r.s+'d</span></div>').join("")+
+    '<p class="verdict">'+(rows[0].s===0?"Nobody has a streak running yet."
+      :esc(rows[0].p.name)+" is out front on "+rows[0].s+(rows[0].s===1?" day.":" days."))+'</p>';
+}
+function renderHabitList(){
+  const box=document.getElementById("habits"), day=todayISO(), mine=habitsOf(me);
+  box.innerHTML="";
+  if(!mine.length){ box.innerHTML='<p class="empty">No habits yet. Add your first one below — start with two or three you can actually hit every day.</p>'; return; }
+  mine.forEach(h=>{
+    const done=isDone(h.id,day);
+    const row=document.createElement("div");
+    row.className="habit"+(done?" done":"");
+    row.innerHTML='<button class="tick" aria-pressed="'+done+'" aria-label="'+esc(h.name)+'">'+
+      '<svg viewBox="0 0 24 24" fill="none" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5.5 5.5L20 6"/></svg></button>'+
+      '<span class="name">'+esc(h.name)+'</span>'+
+      '<span class="streak">'+habitStreak(h.id)+'d</span>'+
+      '<button class="del" aria-label="Delete '+esc(h.name)+'">&times;</button>';
+    row.querySelector(".tick").onclick=async()=>{await toggle(h.id,day,!done);renderHabitsTab();};
+    row.querySelector(".del").onclick=async()=>{
+      if(confirm('Delete "'+h.name+'" and all its history?')){await removeHabit(h.id);renderHabitsTab();}};
+    box.appendChild(row);
+  });
+}
+function renderLane(){
+  const lane=document.getElementById("lane"); lane.innerHTML="";
+  lastDays(30).forEach(day=>{
+    const r=ratio(me,day), i=document.createElement("i");
+    if(r===1)i.className="on"; else if(r>0)i.className="half";
+    i.title=day+" — "+Math.round(r*100)+"%";
+    lane.appendChild(i);
+  });
+  const pd=lastDays(30).filter(d=>perfect(me,d)).length;
+  document.getElementById("lane-hint").textContent=pd+" perfect days out of 30. Faded squares are partial days.";
+}
+function themeColors(){
+  const css=getComputedStyle(document.documentElement);
+  return {muted:css.getPropertyValue("--muted").trim(), grid:css.getPropertyValue("--grid").trim(),
+          inC:css.getPropertyValue("--in").trim(), outC:css.getPropertyValue("--out").trim()};
+}
+function renderHabitChart(){
+  const days=lastDays(30), labels=days.map(d=>d.slice(5).replace("-","/"));
+  const line=p=>({label:p.name,data:days.map(d=>Math.round(ratio(p.id,d)*100)),
+    borderColor:p.color,backgroundColor:p.color+"22",tension:.35,borderWidth:2.5,
+    pointRadius:0,pointHoverRadius:4,fill:mode==="solo"});
+  const datasets = mode==="compare" ? profiles.map(line) : [line(profileOf(me))];
+  const {muted,grid}=themeColors();
+  if(habitChart) habitChart.destroy();
+  habitChart=new Chart(document.getElementById("habitchart"),{
+    type:"line",data:{labels,datasets},
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:"index",intersect:false},
+      scales:{y:{min:0,max:100,ticks:{callback:v=>v+"%",font:{family:"DM Mono",size:11},color:muted},grid:{color:grid}},
+              x:{ticks:{maxTicksLimit:8,font:{family:"DM Mono",size:11},color:muted},grid:{display:false}}},
+      plugins:{legend:{display:mode==="compare",labels:{color:muted,font:{family:"Instrument Sans",size:13},usePointStyle:true,pointStyle:"line"}},
+               tooltip:{callbacks:{label:c=>c.dataset.label+": "+c.parsed.y+"%"}}}}
+  });
+}
+
+/* ================= render: money ================= */
+const inMonth = (t,key) => t.day.slice(0,7)===key;
+function renderMoney(){
+  const key=monthKey(cursor);
+  document.getElementById("monthlabel").textContent =
+    cursor.toLocaleDateString(undefined,{month:"long",year:"numeric"});
+  const mine=txs.filter(t=>inMonth(t,key));
+  const sum=k=>mine.filter(t=>t.kind===k).reduce((a,t)=>a+Number(t.amount),0);
+  const i=sum("in"), o=sum("out");
+  document.getElementById("t-in").textContent=MONEY.format(i);
+  document.getElementById("t-out").textContent=MONEY.format(o);
+  document.getElementById("t-net").textContent=MONEY.format(i-o);
+
+  // category bars
+  const bycat={};
+  mine.filter(t=>t.kind==="out").forEach(t=>{bycat[t.category]=(bycat[t.category]||0)+Number(t.amount);});
+  const rows=Object.entries(bycat).sort((a,b)=>b[1]-a[1]);
+  const cb=document.getElementById("catbars");
+  cb.innerHTML = rows.length ? rows.map(([c,v])=>
+    '<div class="catrow"><span class="cname">'+esc(c)+'</span>'+
+    '<span class="cbar"><i style="width:'+(v/rows[0][1]*100)+'%"></i></span>'+
+    '<span class="cval">'+MONEY.format(v)+'</span></div>').join("")
+    : '<p class="empty">Nothing spent this month yet.</p>';
+
+  // list
+  const list=document.getElementById("txlist");
+  document.getElementById("tx-count").textContent =
+    mine.length ? mine.length+" transaction"+(mine.length===1?"":"s")+", newest first." : "";
+  list.innerHTML="";
+  if(!mine.length){ list.innerHTML='<p class="empty">Nothing logged for this month. Add one above.</p>'; }
+  mine.slice().sort((a,b)=>b.day.localeCompare(a.day)).forEach(t=>{
+    const row=document.createElement("div"); row.className="tx";
+    row.innerHTML='<span class="cat"><b>'+esc(t.category)+'</b><span>'+t.day+(t.note?" · "+esc(t.note):"")+'</span></span>'+
+      '<span class="amt '+t.kind+'">'+(t.kind==="in"?"+":"−")+MONEY.format(Number(t.amount))+'</span>'+
+      '<button class="del" aria-label="Delete">&times;</button>';
+    row.querySelector(".del").onclick=async()=>{
+      if(confirm("Delete this transaction?")){await removeTx(t.id);renderMoney();}};
+    list.appendChild(row);
+  });
+
+  // datalist of past categories
+  const seen=[...new Set(txs.map(t=>t.category))].sort();
+  document.getElementById("cats").innerHTML=seen.map(c=>'<option value="'+esc(c)+'">').join("");
+
+  renderMoneyChart();
+}
+function renderMoneyChart(){
+  const keys=[]; const d=new Date(cursor);
+  for(let k=5;k>=0;k--){const x=new Date(d); x.setMonth(x.getMonth()-k); keys.push(x);}
+  const labels=keys.map(x=>x.toLocaleDateString(undefined,{month:"short"}));
+  const total=(x,kind)=>txs.filter(t=>inMonth(t,monthKey(x))&&t.kind===kind)
+    .reduce((a,t)=>a+Number(t.amount),0);
+  const {muted,grid,inC,outC}=themeColors();
+  if(moneyChart) moneyChart.destroy();
+  moneyChart=new Chart(document.getElementById("moneychart"),{
+    type:"bar",
+    data:{labels,datasets:[
+      {label:"In",data:keys.map(x=>total(x,"in")),backgroundColor:inC,borderRadius:5},
+      {label:"Out",data:keys.map(x=>total(x,"out")),backgroundColor:outC,borderRadius:5}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      scales:{y:{beginAtZero:true,ticks:{font:{family:"DM Mono",size:11},color:muted,callback:v=>v>=1000?(v/1000)+"k":v},grid:{color:grid}},
+              x:{ticks:{font:{family:"DM Mono",size:11},color:muted},grid:{display:false}}},
+      plugins:{legend:{labels:{color:muted,font:{family:"Instrument Sans",size:13},usePointStyle:true,pointStyle:"circle"}},
+               tooltip:{callbacks:{label:c=>c.dataset.label+": "+MONEY.format(c.parsed.y)}}}}
+  });
+}
+
+/* ================= navigation ================= */
+const SECTIONS=["habits","money","trading"];
+const can = s => s==="habits" || (profileOf(me).sections||["habits"]).includes(s);
+
+function renderNav(){
+  SECTIONS.forEach(s=>document.getElementById("nav-"+s).classList.toggle("hidden",!can(s)));
+}
+function show(v){
+  if(SECTIONS.includes(v) && !can(v)) v="habits";
+  view=v;
+  SECTIONS.concat("settings").forEach(k=>{
+    document.getElementById("view-"+k).classList.toggle("hidden",k!==v);
+    document.getElementById("nav-"+k).setAttribute("aria-selected",k===v);
+  });
+  if(v==="habits") renderHabitsTab();
+  if(v==="money") renderMoney();
+  if(v==="trading"){
+    const f=document.getElementById("journal");
+    if(f.getAttribute("src")==="about:blank") f.setAttribute("src","journal.html");
+  }
+  if(v==="settings" && unlocked) renderPerms();
+}
+document.getElementById("nav-habits").onclick=()=>show("habits");
+document.getElementById("nav-money").onclick=()=>show("money");
+document.getElementById("nav-trading").onclick=()=>show("trading");
+document.getElementById("nav-settings").onclick=()=>show("settings");
+
+document.getElementById("privbtn").onclick=unlock;
+document.getElementById("privpw").addEventListener("keydown",e=>{if(e.key==="Enter")unlock();});
+function unlock(){
+  if(document.getElementById("privpw").value!==CONFIG.PRIVATE_PASSWORD){
+    document.getElementById("priv-err").textContent="Wrong password."; return;
+  }
+  unlocked=true;
+  document.getElementById("settings-lock").classList.add("hidden");
+  document.getElementById("settings-body").classList.remove("hidden");
+  renderPerms();
+}
+const LABEL={habits:"Habits",money:"Money",trading:"Trading"};
+function renderPerms(){
+  const box=document.getElementById("perms");
+  box.innerHTML=profiles.map(p=>
+    '<div class="perm">'+
+      '<span class="pname"><i style="background:'+p.color+'"></i>'+esc(p.name)+'</span>'+
+      '<span class="boxes">'+SECTIONS.map(s=>{
+        const on=(p.sections||["habits"]).includes(s);
+        const locked = s==="habits";
+        return '<label class="chk'+(locked?" locked":"")+'">'+
+          '<input type="checkbox" data-p="'+p.id+'" data-s="'+s+'"'+(on||locked?" checked":"")+(locked?" disabled":"")+'>'+
+          LABEL[s]+'</label>';
+      }).join("")+'</span>'+
+    '</div>').join("");
+  box.querySelectorAll("input[type=checkbox]").forEach(cb=>{
+    cb.onchange=async()=>{
+      const p=profiles.find(x=>x.id===cb.dataset.p);
+      const set=new Set(p.sections||["habits"]);
+      cb.checked ? set.add(cb.dataset.s) : set.delete(cb.dataset.s);
+      set.add("habits");
+      const next=SECTIONS.filter(s=>set.has(s));
+      if(!DEMO){
+        const {error}=await db.from("profiles").update({sections:next}).eq("id",p.id);
+        if(error){ alert("Couldn't save that change.\n\n"+error.message); cb.checked=!cb.checked; return; }
+      }
+      p.sections=next;
+      if(p.id===me) renderNav();
+    };
+  });
+}
+document.getElementById("prevmonth").onclick=()=>{cursor.setMonth(cursor.getMonth()-1);renderMoney();};
+document.getElementById("nextmonth").onclick=()=>{cursor.setMonth(cursor.getMonth()+1);renderMoney();};
+
+/* ================= forms ================= */
+document.getElementById("addbtn").onclick=addHabitFromInput;
+document.getElementById("newhabit").addEventListener("keydown",e=>{if(e.key==="Enter")addHabitFromInput();});
+async function addHabitFromInput(){
+  const el=document.getElementById("newhabit"), name=el.value.trim();
+  if(!name) return; el.value="";
+  await addHabit(name); renderHabitsTab();
+}
+document.getElementById("tab-compare").onclick=()=>setMode("compare");
+document.getElementById("tab-solo").onclick=()=>setMode("solo");
+function setMode(m){
+  mode=m;
+  document.getElementById("tab-compare").setAttribute("aria-selected",m==="compare");
+  document.getElementById("tab-solo").setAttribute("aria-selected",m==="solo");
+  renderHabitChart();
+}
+document.getElementById("tx-add").onclick=async()=>{
+  const amount=parseFloat(document.getElementById("tx-amount").value);
+  const category=document.getElementById("tx-cat").value.trim();
+  const day=document.getElementById("tx-day").value;
+  if(!amount||amount<=0) return alert("Enter an amount above zero.");
+  if(!category) return alert("Give it a category so the month adds up.");
+  if(!day) return alert("Pick a date.");
+  const tx={kind:document.getElementById("tx-kind").value,amount,category,
+    note:document.getElementById("tx-note").value.trim(),day};
+  if(await addTx(tx)){
+    document.getElementById("tx-amount").value="";
+    document.getElementById("tx-note").value="";
+    cursor=new Date(day+"T12:00:00"); cursor.setDate(1);
+    renderMoney();
+  }
+};
+
+/* ================= gate ================= */
+const gate=document.getElementById("gate"), app=document.getElementById("app");
+document.getElementById("enter").onclick=tryEnter;
+document.getElementById("pw").addEventListener("keydown",e=>{if(e.key==="Enter")tryEnter();});
+async function tryEnter(){
+  const err=document.getElementById("gate-err");
+  if(document.getElementById("pw").value!==CONFIG.PASSWORD){
+    err.textContent="That password doesn't match. Try again."; return;
+  }
+  err.textContent="";
+  if(!(await load())) return;
+  document.getElementById("pwrow").classList.add("hidden");
+  renderPick();
+}
+function renderPick(){
+  const pick=document.getElementById("pick");
+  pick.classList.remove("hidden");
+  pick.innerHTML=profiles.map(p=>
+    '<button class="pcard" data-id="'+p.id+'">'+
+      '<span class="x" data-del="'+p.id+'">&times;</span>'+
+      '<span class="dot" style="background:'+p.color+'"></span>'+
+      '<span class="who">'+esc(p.name)+'</span>'+
+      '<span class="st">'+streak(p.id)+' day streak</span></button>').join("")+
+    '<button class="pcard pnew" id="newprofile">+ New profile</button>';
+  pick.querySelectorAll(".pcard[data-id]").forEach(b=>{
+    b.onclick=e=>{
+      if(e.target.dataset.del) return;
+      me=b.dataset.id;
+      gate.classList.add("hidden"); app.classList.remove("hidden");
+      if(DEMO) document.getElementById("demo-banner").classList.remove("hidden");
+      document.getElementById("hi").textContent=profileOf(me).name;
+      document.getElementById("date").textContent=
+        new Date().toLocaleDateString(undefined,{weekday:"long",day:"numeric",month:"long"});
+      document.documentElement.style.setProperty("--me",profileOf(me).color);
+      document.getElementById("tx-day").value=todayISO();
+      renderNav();
+      show("habits");
+    };
+  });
+  pick.querySelectorAll("[data-del]").forEach(x=>{
+    x.onclick=async e=>{
+      e.stopPropagation();
+      const p=profileOf(x.dataset.del);
+      if(confirm('Delete "'+p.name+'" and everything logged under it?')){
+        await removeProfile(x.dataset.del); renderPick();
+      }};
+  });
+  document.getElementById("newprofile").onclick=async()=>{
+    const name=(prompt("Name for the new profile?")||"").trim();
+    if(!name) return;
+    await addProfile(name); renderPick();
+  };
+}
+document.getElementById("switch").onclick=()=>{
+  app.classList.add("hidden"); gate.classList.remove("hidden");
+  unlocked=false;
+  document.getElementById("settings-lock").classList.remove("hidden");
+  document.getElementById("settings-body").classList.add("hidden");
+  document.getElementById("privpw").value="";
+  document.getElementById("priv-err").textContent="";
+  renderPick();
+};
+</script>
+</body>
+</html>
