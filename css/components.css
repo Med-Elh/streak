@@ -935,6 +935,28 @@
   color: var(--text-on-accent);
 }
 .habit-row__body { flex: 1 1 auto; min-width: 0; }
+
+/* Manage controls stay quiet until the row is under the pointer, so the list
+   reads as a checklist rather than a toolbar. They are always reachable by
+   keyboard — focus brings them back regardless of hover. */
+.habit-row__actions {
+  display: flex;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.habit-row:hover .habit-row__actions,
+.habit-row:focus-within .habit-row__actions { opacity: 1; }
+@media (hover: none) {
+  .habit-row__actions { opacity: 1; }
+}
+
+.habit-row--archived {
+  background: var(--surface-2);
+  border-style: dashed;
+}
+.habit-row--archived .habit-row__name { color: var(--text-muted); }
 .habit-row__name {
   display: flex;
   align-items: center;
@@ -1119,6 +1141,21 @@
 .edit-row .avatar { cursor: pointer; }
 
 .legend__dot--lg { width: 14px; height: 14px; border-radius: var(--radius-xs); }
+
+.legend__dot--button {
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.legend__dot--button:hover { transform: scale(1.15); }
+.legend__dot--button[aria-expanded='true'] { border-color: var(--text); }
+
+/* The picker opens under the row it belongs to. */
+.swatch-drawer {
+  padding: var(--space-2) 0 var(--space-3);
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
 
 /* ==========================================================================
    Tasks

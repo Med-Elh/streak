@@ -12,9 +12,9 @@ import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js';
 import { requireActiveProfile } from './profiles.js';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
-  formatMoney, formatDate, todayISO, moneyContext, initMoney,
+  formatMoney, formatDate, todayISO, moneyContext, initMoney, swatchPicker,
 } from './ui.js';
-import { categoryDoughnut, monthlyNetChart, seriesColor } from './charts.js';
+import { categoryDoughnut, monthlyNetChart, seriesColor, categoryColor } from './charts.js';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** Beyond six categories the palette is out of distinct hues, so the tail folds. */
@@ -24,6 +24,7 @@ const state = {
   profile: null,
   month: todayISO().slice(0, 7),   // 'YYYY-MM'
   categories: [],
+  palette: [],                      // the six chart slots, resolved at init
   entries: [],                      // the whole selected year
 };
 
@@ -170,18 +171,21 @@ function renderDoughnut() {
 
   const head = sorted.slice(0, MAX_SLICES);
   const tail = sorted.slice(MAX_SLICES);
-  const slices = head.map(([label, value], i) => ({
+
+  // Resolved once, here. The chart and the legend below it read the same
+  // `color` off the same objects in the same order, so they cannot drift.
+  const slices = head.map(([label, value]) => ({
     label,
     value,
-    // A category with its own colour keeps it; otherwise it takes a slot.
-    color: state.categories.find((c) => c.name === label)?.color,
-    colorIndex: i,
+    color: colorForCategoryName(label),
   }));
+
   if (tail.length) {
     slices.push({
       label: `Other (${tail.length})`,
       value: tail.reduce((sum, [, v]) => sum + v, 0),
-      colorIndex: MAX_SLICES,
+      // "Other" is genuinely a remainder, so the neutral slot is the honest one.
+      color: seriesColor(MAX_SLICES),
     });
   }
 
@@ -194,12 +198,23 @@ function renderDoughnut() {
     ...slices.map((s) => el('span', { class: 'legend__item' }, [
       el('span', {
         class: 'legend__dot',
-        style: `background: ${s.color || seriesColor(s.colorIndex)}`,
+        style: `background: ${s.color}`,
         'aria-hidden': 'true',
       }),
       el('span', { text: `${s.label} · ${formatMoney(s.value)}` }),
     ])),
   );
+}
+
+/**
+ * A category's stored colour, falling back to a palette slot keyed to its
+ * position in the profile's category list — stable across months and filters,
+ * unlike its rank in this month's spending.
+ */
+function colorForCategoryName(name) {
+  const index = state.categories.findIndex((c) => c.name === name);
+  if (index === -1) return seriesColor(MAX_SLICES);   // "Uncategorised"
+  return categoryColor(state.categories[index], index % MAX_SLICES);
 }
 
 function renderYearChart() {
@@ -332,6 +347,9 @@ async function addCategory() {
         profile_id: state.profile.id,
         name,
         kind: refs.categoryKind.value,
+        // Whatever the picker is showing — which starts on the next free slot,
+        // so the doughnut never has to guess even if you don't touch it.
+        color: refs.colourPicker.selected(),
       })
       .select('id, name, kind, color')
       .single();
@@ -405,6 +423,15 @@ export async function initFinancesPage() {
     categorySubmit: document.getElementById('category-submit'),
   };
 
+  // The six validated chart slots — the same palette the doughnut draws from.
+  state.palette = Array.from({ length: MAX_SLICES }, (_, i) => seriesColor(i));
+  refs.colourPicker = swatchPicker({
+    colors: state.palette,
+    value: state.palette[0],
+    label: 'Category colour',
+  });
+  document.getElementById('category-colour').append(refs.colourPicker);
+
   refs.month.value = state.month;
   refs.date.value = todayISO();
   document.getElementById('profile-name').textContent = profile.name;
@@ -464,6 +491,9 @@ function wireControls() {
     refs.category.value = '';
     refs.categoryForm.reset();
     showBanner(refs.categoryError, null);
+    // Default to the next unused slot, so a category always arrives with a
+    // sensible colour and the picker only has to be touched to override it.
+    refs.colourPicker.select(seriesColor(state.categories.length % MAX_SLICES));
     refs.categoryModal.showModal();
     refs.categoryName.focus();
   });

@@ -392,6 +392,46 @@ function currencySwitch(profile, onChange) {
   return el('div', { class: 'currency-switch' }, [group, note]);
 }
 
+/**
+ * A row of colour swatches. The caller supplies the palette — ui.js doesn't
+ * import charts.js, and this way profiles and categories can draw from
+ * different sets without the component knowing either of them.
+ *
+ * Colour alone never carries meaning here: each swatch is a real button with an
+ * accessible name, and the chosen one is marked with aria-pressed rather than
+ * only a ring.
+ */
+export function swatchPicker({ colors, value, onPick, label = 'Colour' }) {
+  const group = el('div', { class: 'swatches', role: 'group', 'aria-label': label });
+  let chosen = value ?? colors[0];
+
+  const paint = () => {
+    for (const button of group.children) {
+      button.setAttribute('aria-pressed', String(button.dataset.color === chosen));
+    }
+  };
+
+  colors.forEach((color, index) => {
+    group.append(el('button', {
+      class: 'swatch',
+      type: 'button',
+      style: `background-color: ${color}`,
+      dataset: { color },
+      'aria-label': `Colour ${index + 1}`,
+      onclick: () => {
+        chosen = color;
+        paint();
+        onPick?.(color);
+      },
+    }));
+  });
+
+  paint();
+  group.selected = () => chosen;
+  group.select = (color) => { chosen = color; paint(); };
+  return group;
+}
+
 /* --------------------------------------------------------------- states -- */
 
 export function setBusy(button, busy, busyLabel) {

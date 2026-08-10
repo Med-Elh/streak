@@ -23,6 +23,25 @@ export function seriesColor(index) {
   return index < 6 ? token(`--series-${index + 1}`) : token('--series-other');
 }
 
+/**
+ * The column default for finance_categories.color. A row still carrying it was
+ * never given a colour — it isn't a choice, so it doesn't get treated as one.
+ */
+export const UNSET_CATEGORY_COLOR = '#8b8b8b';
+
+/**
+ * A category's own colour, or a palette slot if it hasn't got one.
+ *
+ * `slot` must be the category's position in the profile's category list, not
+ * its rank in the chart: colour follows the entity, so a category may not
+ * change colour because another one out-spent it this month.
+ */
+export function categoryColor(category, slot = 0) {
+  const stored = (category?.color ?? '').trim().toLowerCase();
+  if (stored && stored !== UNSET_CATEGORY_COLOR) return stored;
+  return seriesColor(slot);
+}
+
 function chrome() {
   return {
     text: token('--text'),
@@ -175,7 +194,11 @@ export function completionChart(canvas, { labels, series }) {
 /* Finances — expenses by category                                            */
 /* ------------------------------------------------------------------------- */
 
-/** `slices` is [{ label, value, colorIndex }], already folded to ≤ 7 by caller. */
+/**
+ * `slices` is [{ label, value, color }], already folded to ≤ 7 by the caller,
+ * with each colour resolved there so the legend beside the chart can use the
+ * exact same values in the exact same order.
+ */
 export function categoryDoughnut(canvas, { slices }) {
   const builder = () => {
     const c = chrome();
@@ -186,7 +209,7 @@ export function categoryDoughnut(canvas, { slices }) {
         labels: slices.map((s) => s.label),
         datasets: [{
           data: slices.map((s) => s.value),
-          backgroundColor: slices.map((s) => s.color || seriesColor(s.colorIndex)),
+          backgroundColor: slices.map((s, i) => s.color || seriesColor(i)),
           // 2px of surface between segments so adjacent fills never touch.
           borderColor: c.surface,
           borderWidth: 2,

@@ -29,6 +29,7 @@ const state = {
   habits: [],        // every profile's active habits
   entries: [],       // { habit_id, date } for completed entries in the window
   filters: { profileId: 'all', habitId: 'all', days: 30 },
+  editingHabit: null,
   mode: 'solo',      // 'solo' | 'comparison'
 };
 
@@ -91,15 +92,25 @@ async function loadAll() {
   state.entries = habits.length ? await fetchEntries(habits.map((h) => h.id)) : [];
 }
 
+/**
+ * Archived habits come back too. Their check-ins still count toward the days
+ * they were ticked — archiving stops a habit going forward, it doesn't rewrite
+ * what already happened.
+ */
 async function fetchHabits() {
   const { data, error } = await supabase
     .from('habits')
     .select('id, profile_id, name, icon, target_per_week, active')
-    .eq('active', true)
     .order('created_at', { ascending: true });
   if (error) throw new Error(describeError(error, 'Couldn’t load habits.'));
   return data ?? [];
 }
+
+const activeHabits = (profileId) =>
+  state.habits.filter((h) => h.profile_id === profileId && h.active);
+
+const archivedHabits = (profileId) =>
+  state.habits.filter((h) => h.profile_id === profileId && !h.active);
 
 async function fetchEntries(habitIds) {
   const { data, error } = await supabase
@@ -135,14 +146,16 @@ async function toggleToday(habit, done) {
 /* ---------------------------------------------------------------- render -- */
 
 function renderToday(mount) {
-  const mine = state.habits.filter((h) => h.profile_id === state.profile.id);
+  const mine = activeHabits(state.profile.id);
   clear(mount);
 
   if (!mine.length) {
     mount.append(
       emptyState({
-        title: 'No habits yet',
-        body: 'Add the first thing you want to do every day. The streak starts the day you tick it.',
+        title: archivedHabits(state.profile.id).length ? 'Nothing being tracked' : 'No habits yet',
+        body: archivedHabits(state.profile.id).length
+          ? 'Everything here is archived. Restore one below, or start something new.'
+          : 'Add the first thing you want to do every day. The streak starts the day you tick it.',
         actionLabel: 'Add a habit',
         onAction: openHabitModal,
       }),
@@ -153,31 +166,97 @@ function renderToday(mount) {
   const today = todayISO();
   const done = doneSet(mine.map((h) => h.id)).get(today) ?? new Set();
 
-  for (const habit of mine) {
-    const isDone = done.has(habit.id);
-    const streak = habitStreak(habit.id);
+  for (const habit of mine) mount.append(habitRow(habit, done.has(habit.id)));
+}
 
-    const row = el('button', {
-      class: 'habit-row',
-      type: 'button',
-      dataset: { done: String(isDone) },
-      'aria-pressed': String(isDone),
-      onclick: async () => {
-        row.disabled = true;
-        try {
-          await toggleToday(habit, !isDone);
-          toast(isDone ? `${habit.name} unticked.` : `${habit.name} done today.`, {
-            type: 'success',
-            duration: 2200,
-          });
-          renderAll();
-        } catch (error) {
-          toast(error.message, { type: 'error' });
-          row.disabled = false;
-        }
-      },
-    }, [
-      el('span', { class: 'habit-check', 'aria-hidden': 'true', text: '✓' }),
+/**
+ * The row is a container, not a button — it holds the tick target and the
+ * manage controls, and a button inside a button isn't valid markup.
+ */
+function habitRow(habit, isDone) {
+  const streak = habitStreak(habit.id);
+
+  const check = el('button', {
+    class: 'habit-check',
+    type: 'button',
+    'aria-pressed': String(isDone),
+    'aria-label': isDone ? `Untick ${habit.name} for today` : `Tick ${habit.name} for today`,
+    text: '✓',
+    onclick: async () => {
+      check.disabled = true;
+      try {
+        await toggleToday(habit, !isDone);
+        toast(isDone ? `${habit.name} unticked.` : `${habit.name} done today.`, {
+          type: 'success',
+          duration: 2200,
+        });
+        renderAll();
+      } catch (error) {
+        toast(error.message, { type: 'error' });
+        check.disabled = false;
+      }
+    },
+  });
+
+  return el('div', { class: 'habit-row', dataset: { done: String(isDone) } }, [
+    check,
+    el('span', { class: 'habit-row__body' }, [
+      el('span', { class: 'habit-row__name' }, [
+        habit.icon ? el('span', { 'aria-hidden': 'true', text: habit.icon }) : null,
+        el('span', { text: habit.name }),
+      ]),
+      el('span', {
+        class: 'habit-row__meta',
+        text: streak
+          ? `${streak}-day streak · ${habit.target_per_week}× a week`
+          : `${habit.target_per_week}× a week`,
+      }),
+    ]),
+    streakMark(streak, { small: true }),
+    el('div', { class: 'habit-row__actions' }, [
+      el('button', {
+        class: 'btn btn--ghost btn--sm',
+        type: 'button',
+        text: 'Edit',
+        'aria-label': `Edit ${habit.name}`,
+        onclick: () => openHabitModal(habit),
+      }),
+      el('button', {
+        class: 'btn btn--ghost btn--sm',
+        type: 'button',
+        text: 'Archive',
+        'aria-label': `Archive ${habit.name}`,
+        onclick: () => setArchived(habit, true),
+      }),
+      el('button', {
+        class: 'btn btn--danger btn--sm',
+        type: 'button',
+        text: 'Delete',
+        'aria-label': `Delete ${habit.name}`,
+        onclick: () => removeHabit(habit),
+      }),
+    ]),
+  ]);
+}
+
+/**
+ * Archived habits keep their history and stay out of the way. Restoring one
+ * picks up exactly where it left off — the entries never went anywhere.
+ */
+function renderArchived(mount) {
+  const archived = archivedHabits(state.profile.id);
+  clear(mount);
+  if (!archived.length) return;
+
+  const group = el('details', { class: 'collapse' }, [
+    el('summary', {}, [
+      el('span', { text: 'Archived' }),
+      el('span', { class: 'collapse__count', text: String(archived.length) }),
+    ]),
+  ]);
+
+  for (const habit of archived) {
+    group.append(el('div', { class: 'habit-row habit-row--archived' }, [
       el('span', { class: 'habit-row__body' }, [
         el('span', { class: 'habit-row__name' }, [
           habit.icon ? el('span', { 'aria-hidden': 'true', text: habit.icon }) : null,
@@ -185,13 +264,82 @@ function renderToday(mount) {
         ]),
         el('span', {
           class: 'habit-row__meta',
-          text: streak ? `${streak}-day streak · ${habit.target_per_week}× a week` : `${habit.target_per_week}× a week`,
+          text: `${entryCount(habit.id)} check-in${entryCount(habit.id) === 1 ? '' : 's'} kept`,
         }),
       ]),
-      streakMark(streak, { small: true }),
-    ]);
+      el('div', { class: 'habit-row__actions' }, [
+        el('button', {
+          class: 'btn btn--secondary btn--sm',
+          type: 'button',
+          text: 'Restore',
+          'aria-label': `Restore ${habit.name}`,
+          onclick: () => setArchived(habit, false),
+        }),
+        el('button', {
+          class: 'btn btn--danger btn--sm',
+          type: 'button',
+          text: 'Delete',
+          'aria-label': `Delete ${habit.name}`,
+          onclick: () => removeHabit(habit),
+        }),
+      ]),
+    ]));
+  }
 
-    mount.append(row);
+  mount.append(group);
+}
+
+function entryCount(habitId) {
+  return state.entries.filter((e) => e.habit_id === habitId).length;
+}
+
+/* ------------------------------------------------------------- management -- */
+
+async function setArchived(habit, archived) {
+  try {
+    const { error } = await supabase
+      .from('habits')
+      .update({ active: !archived })
+      .eq('id', habit.id);
+    if (error) throw new Error(describeError(error, `Couldn’t ${archived ? 'archive' : 'restore'} that habit.`));
+
+    habit.active = !archived;
+    toast(
+      archived
+        ? `${habit.name} archived. Its history is kept.`
+        : `${habit.name} restored.`,
+      { type: 'success' },
+    );
+    renderAll();
+  } catch (error) {
+    toast(error.message, { type: 'error' });
+  }
+}
+
+/**
+ * Deleting cascades to habit_entries in the database, so the confirm has to say
+ * so plainly — the streak is the point of the app, and this is the one action
+ * that destroys one.
+ */
+async function removeHabit(habit) {
+  const count = entryCount(habit.id);
+  const detail = count
+    ? `Its check-in history goes too — ${count} check-in${count === 1 ? '' : 's'}.`
+    : 'Its check-in history goes too.';
+
+  if (!window.confirm(`Delete ${habit.name}? ${detail} This can't be undone.`)) return;
+
+  try {
+    const { error } = await supabase.from('habits').delete().eq('id', habit.id);
+    if (error) throw new Error(describeError(error, 'Couldn’t delete that habit.'));
+
+    state.habits = state.habits.filter((h) => h.id !== habit.id);
+    state.entries = state.entries.filter((e) => e.habit_id !== habit.id);
+    toast(`${habit.name} deleted.`, { type: 'success' });
+    refreshHabitFilter();
+    renderAll();
+  } catch (error) {
+    toast(error.message, { type: 'error' });
   }
 }
 
@@ -286,15 +434,29 @@ let refs = {};
 
 function renderAll() {
   renderToday(refs.today);
+  renderArchived(refs.archived);
   renderBoard(refs.board);
   renderChart(refs.canvas, refs.chartEmpty);
 }
 
-function openHabitModal() {
+/** One modal for both jobs: `habit` present means edit, absent means add. */
+function openHabitModal(habit = null) {
   refs.habitForm.reset();
   showBanner(refs.habitError, null);
+
+  state.editingHabit = habit?.id ?? null;
+  refs.habitTitle.textContent = habit ? 'Edit habit' : 'Add a habit';
+  refs.habitSubmit.textContent = habit ? 'Save changes' : 'Add habit';
+
+  if (habit) {
+    refs.habitName.value = habit.name;
+    refs.habitIcon.value = habit.icon ?? '';
+    refs.habitTarget.value = String(habit.target_per_week);
+  }
+
   refs.habitModal.showModal();
   refs.habitName.focus();
+  refs.habitName.select();
 }
 
 export async function initHabitsPage() {
@@ -313,6 +475,8 @@ export async function initHabitsPage() {
 
   refs = {
     today: document.getElementById('today-list'),
+    archived: document.getElementById('archived-list'),
+    habitTitle: document.getElementById('habit-title'),
     board: document.getElementById('board'),
     canvas: document.getElementById('completion-chart'),
     chartEmpty: document.getElementById('chart-empty'),
@@ -364,9 +528,10 @@ function populateFilters() {
 }
 
 function refreshHabitFilter() {
+  // Archived habits stay out of the filter: you can't chart what isn't running.
   const scope = state.filters.profileId === 'all'
-    ? state.habits
-    : state.habits.filter((h) => h.profile_id === state.filters.profileId);
+    ? state.habits.filter((h) => h.active)
+    : state.habits.filter((h) => h.profile_id === state.filters.profileId && h.active);
 
   clear(refs.filterHabit).append(
     el('option', { value: 'all', text: 'All habits' }),
@@ -417,16 +582,20 @@ function wireControls() {
       return;
     }
 
-    setBusy(refs.habitSubmit, true, 'Adding…');
+    const editing = state.editingHabit;
+    const values = {
+      name,
+      icon: refs.habitIcon.value.trim() || null,
+      target_per_week: Number(refs.habitTarget.value),
+    };
+
+    setBusy(refs.habitSubmit, true, editing ? 'Saving…' : 'Adding…');
     try {
-      const { data, error } = await supabase
-        .from('habits')
-        .insert({
-          profile_id: state.profile.id,
-          name,
-          icon: refs.habitIcon.value.trim() || null,
-          target_per_week: Number(refs.habitTarget.value),
-        })
+      const query = editing
+        ? supabase.from('habits').update(values).eq('id', editing)
+        : supabase.from('habits').insert({ profile_id: state.profile.id, ...values });
+
+      const { data, error } = await query
         .select('id, profile_id, name, icon, target_per_week, active')
         .single();
 
@@ -435,16 +604,21 @@ function wireControls() {
           refs.habitError,
           error.code === '23505'
             ? 'This profile already has a habit with that name.'
-            : describeError(error, 'Couldn’t add that habit.'),
+            : describeError(error, `Couldn’t ${editing ? 'save' : 'add'} that habit.`),
         );
         return;
       }
 
-      state.habits.push(data);
+      if (editing) Object.assign(state.habits.find((h) => h.id === editing), data);
+      else state.habits.push(data);
+
       refs.habitModal.close();
-      toast(`${name} added.`, { type: 'success' });
+      state.editingHabit = null;
+      toast(editing ? `${name} updated.` : `${name} added.`, { type: 'success' });
       refreshHabitFilter();
       renderAll();
+    } catch (error) {
+      showBanner(refs.habitError, error.message);
     } finally {
       setBusy(refs.habitSubmit, false);
     }

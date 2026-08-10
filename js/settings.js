@@ -15,17 +15,19 @@ import {
 } from './profiles.js';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
-  initials, initMoney, setMoneyContext, moneyContext, formatMoney, useCurrency,
+  initials, initMoney, setMoneyContext, moneyContext, formatMoney, useCurrency, swatchPicker,
   setTheme, effectiveTheme, currentTheme, applyProfileTheme,
 } from './ui.js';
 import { OPTION_KINDS, seedFor } from './constants.js';
+import { categoryColor, seriesColor } from './charts.js';
 
 const state = {
   profile: null,
   profiles: [],
   options: {},        // kind → [{ id, value }] of custom rows only
   categories: [],
-  palette: [],
+  palette: [],        // the six chart slots — categories are charted
+  avatarPalette: [],  // the eight avatar colours — profiles are not
 };
 
 let refs = {};
@@ -127,10 +129,10 @@ async function renderProfiles() {
   }
 }
 
-/** Colours come from the tokens, so clicking cycles rather than opening a picker. */
+/** Avatars cycle rather than open a picker — eight options, one target. */
 async function cycleColour(profile) {
-  const index = state.palette.indexOf(profile.avatar_color);
-  const next = state.palette[(index + 1) % state.palette.length];
+  const index = state.avatarPalette.indexOf(profile.avatar_color);
+  const next = state.avatarPalette[(index + 1) % state.avatarPalette.length];
 
   await guard('Couldn’t change that colour.', async () => {
     await recolorProfile(profile.id, next);
@@ -177,7 +179,7 @@ async function addProfile(event) {
 
   setBusy(refs.profileSubmit, true, 'Adding…');
   try {
-    const colour = state.palette[state.profiles.length % state.palette.length];
+    const colour = state.avatarPalette[state.profiles.length % state.avatarPalette.length];
     const profile = await createProfile({ name, avatarColor: colour });
     state.profiles.push(profile);
     refs.profileName.value = '';
@@ -311,11 +313,18 @@ function renderCategories() {
     return;
   }
 
-  for (const category of state.categories) {
-    const swatch = el('span', {
-      class: 'legend__dot legend__dot--lg',
-      style: `background: ${category.color}`,
-      'aria-hidden': 'true',
+  state.categories.forEach((category, index) => {
+    // Same resolver the doughnut uses, so a swatch here matches its slice there.
+    const current = categoryColor(category, index % 6);
+
+    const swatch = el('button', {
+      class: 'legend__dot legend__dot--lg legend__dot--button',
+      type: 'button',
+      style: `background: ${current}`,
+      title: 'Change colour',
+      'aria-label': `Change the colour of ${category.name}`,
+      'aria-expanded': 'false',
+      onclick: () => togglePicker(category, current, swatch),
     });
 
     const row = listRow({
@@ -343,7 +352,48 @@ function renderCategories() {
       text: category.kind === 'income' ? 'In' : 'Out',
     }));
     refs.categoryList.append(row);
+  });
+}
+
+/**
+ * The picker opens under the row it belongs to rather than in a dialog: it's a
+ * six-way choice, and a modal for that is more ceremony than the decision needs.
+ */
+function togglePicker(category, current, swatch) {
+  const row = swatch.closest('.edit-row');
+  const existing = row.nextElementSibling;
+
+  if (existing?.classList.contains('swatch-drawer')) {
+    existing.remove();
+    swatch.setAttribute('aria-expanded', 'false');
+    return;
   }
+
+  const picker = swatchPicker({
+    colors: state.palette,
+    value: current,
+    label: `Colour for ${category.name}`,
+    onPick: (color) => saveCategoryColour(category, color),
+  });
+
+  swatch.setAttribute('aria-expanded', 'true');
+  row.after(el('div', { class: 'swatch-drawer' }, picker));
+  picker.querySelector('.swatch')?.focus();
+}
+
+async function saveCategoryColour(category, color) {
+  await guard('Couldn’t change that colour.', async () => {
+    const { error } = await supabase
+      .from('finance_categories')
+      .update({ color })
+      .eq('id', category.id);
+    if (error) throw new Error(describeError(error, 'Couldn’t change that colour.'));
+
+    category.color = color;
+    toast('Colour changed.', { type: 'success', duration: 2000 });
+    renderCategories();
+    return true;
+  });
 }
 
 async function removeCategory(category) {
@@ -376,7 +426,7 @@ async function addCategory(event) {
         profile_id: state.profile.id,
         name,
         kind: refs.categoryKind.value,
-        color: state.palette[state.categories.length % state.palette.length],
+        color: refs.categoryColour.selected(),
       })
       .select('id, name, kind, color')
       .single();
@@ -389,6 +439,8 @@ async function addCategory(event) {
 
     state.categories.push(data);
     refs.categoryName.value = '';
+    // Move the default on, so a run of new categories doesn't come out one colour.
+    refs.categoryColour.select(state.palette[state.categories.length % state.palette.length]);
     toast(`${name} added.`, { type: 'success', duration: 2000 });
     renderCategories();
     return true;
@@ -506,8 +558,19 @@ export async function initSettingsPage() {
   renderTheme();
 
   const styles = getComputedStyle(document.documentElement);
-  state.palette = Array.from({ length: 8 }, (_, i) =>
+  state.avatarPalette = Array.from({ length: 8 }, (_, i) =>
     styles.getPropertyValue(`--avatar-${i + 1}`).trim()).filter(Boolean);
+
+  // Categories are charted, so they draw from the validated chart slots rather
+  // than the avatar palette.
+  state.palette = Array.from({ length: 6 }, (_, i) => seriesColor(i));
+
+  refs.categoryColour = swatchPicker({
+    colors: state.palette,
+    value: state.palette[0],
+    label: 'Category colour',
+  });
+  document.getElementById('category-colour').append(refs.categoryColour);
 
   refs.profileList.append(skeletonList(2, 'skeleton--text'));
   refs.categoryList.append(skeletonList(2, 'skeleton--text'));
