@@ -10,15 +10,15 @@
  *    at least one habit was done. Requiring all of them punishes adding a habit.
  */
 
-import { supabase, describeError } from './supabase.js?v=7';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=7';
-import { listProfiles, requireActiveProfile } from './profiles.js?v=7';
+import { supabase, describeError } from './supabase.js?v=8';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=8';
+import { listProfiles, requireActiveProfile } from './profiles.js?v=8';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
   todayISO, formatDate, initials, beat,
   applyProfileTheme,
-} from './ui.js?v=7';
-import { completionChart } from './charts.js?v=7';
+} from './ui.js?v=8';
+import { completionChart } from './charts.js?v=8';
 
 const DAY = 86400000;
 /** Streaks can run long; a year of history is plenty to walk back through. */
@@ -288,27 +288,89 @@ function habitCard(habit, isDone) {
         el('span', { class: 'habit-card__streak-num', text: String(streak) }),
         el('span', { class: 'habit-card__streak-unit', text: streak === 1 ? 'day' : 'days' }),
       ]),
+      cardMenu(habit),
     ]),
     tick,
     weekDots(dates, today),
     contributionGrid(habit, dates, today),
-    el('div', { class: 'habit-row__actions' }, [
-      el('button', {
-        class: 'btn btn--ghost btn--sm', type: 'button', text: 'Edit',
-        'aria-label': `Edit ${habit.name}`, onclick: () => openHabitModal(habit),
-      }),
-      el('button', {
-        class: 'btn btn--ghost btn--sm', type: 'button', text: 'Archive',
-        'aria-label': `Archive ${habit.name}`, onclick: () => setArchived(habit, true),
-      }),
-      el('button', {
-        class: 'btn btn--danger btn--sm', type: 'button', text: 'Delete',
-        'aria-label': `Delete ${habit.name}`, onclick: () => removeHabit(habit),
-      }),
-    ]),
   );
 
   return card;
+}
+
+/* Only one menu is open at a time, so the last one closes itself. */
+let openMenu = null;
+
+function closeMenu() {
+  if (!openMenu) return;
+  openMenu.panel.remove();
+  openMenu.button.setAttribute('aria-expanded', 'false');
+  openMenu = null;
+}
+
+document.addEventListener('click', (event) => {
+  if (openMenu && !openMenu.wrap.contains(event.target)) closeMenu();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && openMenu) {
+    const { button } = openMenu;
+    closeMenu();
+    button.focus();
+  }
+});
+
+/**
+ * The ⋯ menu in a card's top-right. Managing a habit is rare next to ticking
+ * it, so it stays folded away rather than competing with the thing you came
+ * here to do.
+ */
+function cardMenu(habit) {
+  const wrap = el('div', { class: 'card-menu' });
+
+  const button = el('button', {
+    class: 'card-menu__button',
+    type: 'button',
+    'aria-haspopup': 'menu',
+    'aria-expanded': 'false',
+    'aria-label': `Manage ${habit.name}`,
+    title: `Manage ${habit.name}`,
+    text: '⋯',
+  });
+
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const wasOpen = openMenu?.button === button;
+    closeMenu();
+    if (wasOpen) return;
+
+    const panel = el('div', { class: 'card-menu__panel', role: 'menu' }, [
+      menuItem('Edit', `Edit ${habit.name}`, () => openHabitModal(habit)),
+      menuItem('Archive', `Archive ${habit.name}`, () => setArchived(habit, true)),
+      menuItem('Delete', `Delete ${habit.name}`, () => removeHabit(habit), 'is-danger'),
+    ]);
+
+    wrap.append(panel);
+    button.setAttribute('aria-expanded', 'true');
+    openMenu = { wrap, button, panel };
+    panel.querySelector('button')?.focus();
+  });
+
+  wrap.append(button);
+  return wrap;
+}
+
+function menuItem(label, description, action, modifier = '') {
+  return el('button', {
+    class: `card-menu__item ${modifier}`,
+    type: 'button',
+    role: 'menuitem',
+    text: label,
+    'aria-label': description,
+    onclick: () => {
+      closeMenu();
+      action();
+    },
+  });
 }
 
 /**
@@ -450,7 +512,7 @@ function renderArchived(mount) {
           text: `${entryCount(habit.id)} check-in${entryCount(habit.id) === 1 ? '' : 's'} kept`,
         }),
       ]),
-      el('div', { class: 'habit-row__actions' }, [
+      el('div', { class: 'habit-actions' }, [
         el('button', {
           class: 'btn btn--secondary btn--sm',
           type: 'button',
@@ -505,12 +567,7 @@ async function setArchived(habit, archived) {
  * that destroys one.
  */
 async function removeHabit(habit) {
-  const count = entryCount(habit.id);
-  const detail = count
-    ? `Its check-in history goes too — ${count} check-in${count === 1 ? '' : 's'}.`
-    : 'Its check-in history goes too.';
-
-  if (!window.confirm(`Delete ${habit.name}? ${detail} This can't be undone.`)) return;
+  if (!window.confirm(`Delete ${habit.name}? Its check-in history goes too.`)) return;
 
   try {
     const { error } = await supabase.from('habits').delete().eq('id', habit.id);

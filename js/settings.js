@@ -7,19 +7,19 @@
  * near-identical ones.
  */
 
-import { supabase, describeError } from './supabase.js?v=7';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=7';
+import { supabase, describeError } from './supabase.js?v=8';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=8';
 import {
   requireActiveProfile, listProfiles, createProfile, renameProfile,
   recolorProfile, deleteProfile, updateCurrency, setActiveProfile,
-} from './profiles.js?v=7';
+} from './profiles.js?v=8';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
   initials, initMoney, setMoneyContext, moneyContext, formatMoney, useCurrency, swatchPicker,
   setTheme, effectiveTheme, currentTheme, applyProfileTheme,
-} from './ui.js?v=7';
-import { OPTION_KINDS, seedFor } from './constants.js?v=7';
-import { categoryColor, seriesColor } from './charts.js?v=7';
+} from './ui.js?v=8';
+import { OPTION_KINDS, seedFor } from './constants.js?v=8';
+import { categoryColor, seriesColor } from './charts.js?v=8';
 
 const state = {
   profile: null,

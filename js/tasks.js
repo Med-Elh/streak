@@ -6,15 +6,15 @@
  * and the deadline rather than a checkbox.
  */
 
-import { supabase, describeError } from './supabase.js?v=7';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=7';
-import { requireActiveProfile } from './profiles.js?v=7';
+import { supabase, describeError } from './supabase.js?v=8';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=8';
+import { requireActiveProfile } from './profiles.js?v=8';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
   statRing, formatDate, todayISO, beat,
   applyProfileTheme,
-} from './ui.js?v=7';
-import { PRIORITIES, OBJECTIVE_STATUSES, OBJECTIVE_UNITS, options, labelFor } from './constants.js?v=7';
+} from './ui.js?v=8';
+import { PRIORITIES, OBJECTIVE_STATUSES, OBJECTIVE_UNITS, options, labelFor } from './constants.js?v=8';
 
 const state = {
   profile: null,

@@ -7,15 +7,15 @@
  * you don't.
  */
 
-import { supabase, describeError } from './supabase.js?v=7';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=7';
-import { requireActiveProfile } from './profiles.js?v=7';
+import { supabase, describeError } from './supabase.js?v=8';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=8';
+import { requireActiveProfile } from './profiles.js?v=8';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy,
   todayISO, formatDate, applyProfileTheme, beat,
-} from './ui.js?v=7';
-import { FEELINGS, INTENSITY_LABELS, feeling } from './constants.js?v=7';
-import { countBarChart } from './charts.js?v=7';
+} from './ui.js?v=8';
+import { FEELINGS, INTENSITY_LABELS, feeling } from './constants.js?v=8';
+import { countBarChart } from './charts.js?v=8';
 
 const LAST_REFLECTION_KEY = 'streak.last_reflection';
 /** Four bands, so a week reads as a shape rather than 168 cells. */

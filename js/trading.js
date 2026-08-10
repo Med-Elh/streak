@@ -8,27 +8,27 @@
  * fill you got is not always the fill you planned.
  */
 
-import { supabase, describeError } from './supabase.js?v=7';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=7';
-import { requireActiveProfile } from './profiles.js?v=7';
+import { supabase, describeError } from './supabase.js?v=8';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=8';
+import { requireActiveProfile } from './profiles.js?v=8';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner, statRing,
   formatSignedMoney, compactNumber, signClass, formatDate, todayISO, formatPercent,
   moneyContext, initMoney,
   applyProfileTheme,
-} from './ui.js?v=7';
+} from './ui.js?v=8';
 import {
   equityCurveChart, signedBarChart, rateBarChart,
-} from './charts.js?v=7';
+} from './charts.js?v=8';
 import {
   INSTRUMENTS, SESSIONS, SETUPS, EMOTIONS, DIRECTIONS, OUTCOMES, options, loadOptions,
-} from './constants.js?v=7';
+} from './constants.js?v=8';
 import {
   ACCOUNT_STATUSES, evaluate, groupAccounts, pickAccount,
   listAccounts, createAccount, updateAccount, deleteAccount, setStatus,
   loadSelectedAccountId, saveSelectedAccountId,
   isDismissed, dismiss, clearDismissals, hasBaseline, percentOf,
-} from './accounts.js?v=7';
+} from './accounts.js?v=8';
 
 const state = {
   profile: null,

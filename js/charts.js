@@ -9,7 +9,7 @@
  */
 
 import Chart from 'https://esm.sh/chart.js@4/auto';
-import { formatMoney, compactMoney } from './ui.js?v=7';
+import { formatMoney, compactMoney } from './ui.js?v=8';
 
 /* Registry of live charts, so a theme flip can rebuild them with new colours. */
 const live = new Map();

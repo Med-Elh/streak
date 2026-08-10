@@ -7,15 +7,15 @@
  * too many.
  */
 
-import { supabase, describeError } from './supabase.js?v=7';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=7';
-import { requireActiveProfile } from './profiles.js?v=7';
+import { supabase, describeError } from './supabase.js?v=8';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=8';
+import { requireActiveProfile } from './profiles.js?v=8';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
   formatMoney, formatDate, todayISO, moneyContext, initMoney, swatchPicker,
   applyProfileTheme,
-} from './ui.js?v=7';
-import { categoryDoughnut, monthlyNetChart, seriesColor, categoryColor } from './charts.js?v=7';
+} from './ui.js?v=8';
+import { categoryDoughnut, monthlyNetChart, seriesColor, categoryColor } from './charts.js?v=8';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** Beyond six categories the palette is out of distinct hues, so the tail folds. */
