@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="light dark" />
+  <meta http-equiv="Cache-Control" content="no-cache" />
   <title>Trading · Streak.</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -12,9 +13,9 @@
     href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
     rel="stylesheet" />
 
-  <link rel="stylesheet" href="css/tokens.css" />
-  <link rel="stylesheet" href="css/base.css" />
-  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/tokens.css?v=7" />
+  <link rel="stylesheet" href="css/base.css?v=7" />
+  <link rel="stylesheet" href="css/components.css?v=7" />
 </head>
 
 <body>
@@ -24,7 +25,24 @@
         <p class="eyebrow">Trading</p>
         <h1><span id="profile-name"></span>’s journal</h1>
       </div>
+      <div class="account-bar">
+        <label class="sr-only" for="account-select">Account</label>
+        <select class="select" id="account-select"></select>
+        <span id="account-pill"></span>
+        <button class="btn btn--secondary btn--sm" type="button" id="account-edit">Edit</button>
+      </div>
     </div>
+
+    <!-- Status suggestion. Never applied on its own. -->
+    <div class="banner banner--info account-alert" id="account-alert" role="status" hidden>
+      <span id="account-alert-text"></span>
+      <div class="row row-end">
+        <button class="btn btn--ghost btn--sm" type="button" id="alert-dismiss">Dismiss</button>
+        <button class="btn btn--primary btn--sm" type="button" id="alert-confirm">Confirm</button>
+      </div>
+    </div>
+
+    <section class="account-summary" id="account-summary" aria-label="Account standing"></section>
 
     <!-- Log form + pre-trade rules -->
     <section class="log-layout" aria-labelledby="log-title">
@@ -152,7 +170,13 @@
         <div class="panel">
           <div class="panel__head">
             <span class="panel__label">Cumulative P&amp;L</span>
-            <span class="panel__total" id="equity-total">—</span>
+            <div class="row">
+              <div class="segmented segmented--sm" role="group" aria-label="Equity scale" id="equity-mode">
+                <button type="button" data-equity-mode="amount" aria-pressed="true">USD</button>
+                <button type="button" data-equity-mode="percent" aria-pressed="false">%</button>
+              </div>
+              <span class="panel__total" id="equity-total">—</span>
+            </div>
           </div>
           <div class="chart">
             <canvas id="equity-chart" aria-label="Cumulative profit and loss over time"></canvas>
@@ -266,8 +290,73 @@
     </section>
   </main>
 
+  <dialog class="modal" id="account-modal" aria-labelledby="account-modal-title">
+    <form id="account-form">
+      <div class="modal__head">
+        <h2 class="modal__title" id="account-modal-title">New account</h2>
+        <button class="btn btn--icon" type="button" id="account-close" aria-label="Close">×</button>
+      </div>
+
+      <div class="modal__body stack">
+        <p class="banner banner--error" id="account-error" role="alert" hidden></p>
+
+        <div class="field">
+          <label class="label" for="account-name">Name</label>
+          <input class="input" id="account-name" maxlength="60" required autocomplete="off"
+            placeholder="FTMO 100k phase 1" />
+        </div>
+
+        <div class="field">
+          <label class="label" for="account-balance">Starting balance <span class="field__currency">USD</span></label>
+          <input class="input input--num" id="account-balance" type="number" step="any"
+            inputmode="decimal" required />
+        </div>
+
+        <p class="hint">The three limits are optional. Leave one blank and it is never checked.</p>
+
+        <div class="entry-form">
+          <div class="field">
+            <label class="label" for="account-target">Profit target</label>
+            <input class="input input--num" id="account-target" type="number" min="0" step="any"
+              inputmode="decimal" placeholder="8000" />
+          </div>
+
+          <div class="field">
+            <label class="label" for="account-maxdd">Max drawdown</label>
+            <input class="input input--num" id="account-maxdd" type="number" min="0" step="any"
+              inputmode="decimal" placeholder="10000" />
+          </div>
+
+          <div class="field">
+            <label class="label" for="account-dailydd">Daily loss limit</label>
+            <input class="input input--num" id="account-dailydd" type="number" min="0" step="any"
+              inputmode="decimal" placeholder="5000" />
+          </div>
+        </div>
+
+        <div class="field" id="account-status-field" hidden>
+          <label class="label" for="account-status">Status</label>
+          <select class="select" id="account-status"></select>
+          <span class="hint">Set by hand. Nothing here changes on its own.</span>
+        </div>
+
+        <div class="field" id="account-note-field" hidden>
+          <label class="label" for="account-note">Status note <span class="faint">(optional)</span></label>
+          <input class="input" id="account-note" maxlength="200" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="modal__foot">
+        <button class="btn btn--danger btn--sm" type="button" id="account-delete" hidden>Delete</button>
+        <div class="spacer"></div>
+        <button class="btn btn--secondary" type="button" id="account-cancel">Cancel</button>
+        <button class="btn btn--primary" type="submit" id="account-submit">Create account</button>
+      </div>
+    </form>
+  </dialog>
+
   <script type="module">
-    import { initTradingPage } from './js/trading.js';
+    import { initTradingPage } from './js/trading.js?v=7';
     initTradingPage();
   </script>
 </body>

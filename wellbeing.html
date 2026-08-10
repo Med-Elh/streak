@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en" data-booting>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <meta http-equiv="Cache-Control" content="no-cache" />
+  <title>Wellbeing · Streak.</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
+    rel="stylesheet" />
+
+  <link rel="stylesheet" href="css/tokens.css?v=7" />
+  <link rel="stylesheet" href="css/base.css?v=7" />
+  <link rel="stylesheet" href="css/components.css?v=7" />
+</head>
+
+<body class="calm">
+  <main class="page stack-lg">
+    <div class="page-head">
+      <div>
+        <p class="eyebrow">Wellbeing</p>
+        <h1>How are you, <span id="profile-name"></span>?</h1>
+      </div>
+    </div>
+
+    <section class="card card--calm" aria-labelledby="log-title">
+      <h2 class="card__title" id="log-title">Pick what fits right now</h2>
+      <p class="muted">Nothing here is scored or compared. Log it as often or as rarely as you like.</p>
+
+      <div class="feeling-grid" id="feeling-grid" role="group" aria-label="Feelings"></div>
+
+      <div class="log-detail" id="log-detail" hidden>
+        <div class="field">
+          <label class="label" for="intensity">
+            How strongly? <span class="faint" id="intensity-label">Moderately</span>
+          </label>
+          <input class="range" type="range" id="intensity" min="1" max="5" step="1" value="3" />
+        </div>
+
+        <div class="field">
+          <label class="label" for="note">Anything to add <span class="faint">(optional)</span></label>
+          <textarea class="textarea" id="note" maxlength="500"
+            placeholder="What's behind it, if you want to say."></textarea>
+        </div>
+
+        <button class="btn btn--primary btn--lg" type="button" id="save-entry">
+          <span id="save-label">Log it</span>
+        </button>
+      </div>
+
+      <blockquote class="reflection" id="reflection" hidden></blockquote>
+    </section>
+
+    <section class="card card--calm" aria-labelledby="today-title">
+      <h2 class="card__title" id="today-title">Today</h2>
+      <div id="timeline"></div>
+    </section>
+
+    <section class="card card--calm" aria-labelledby="week-title">
+      <h2 class="card__title" id="week-title">This week</h2>
+      <p class="muted">Each block is the strongest feeling logged in that part of the day.</p>
+      <div id="week-view"></div>
+    </section>
+
+    <section class="card card--calm" aria-labelledby="chart-title">
+      <div class="card__head">
+        <h2 class="card__title" id="chart-title">What comes up most</h2>
+        <select class="select" id="chart-range" aria-label="Period">
+          <option value="7">Last 7 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="90">Last 90 days</option>
+        </select>
+      </div>
+      <div class="chart chart--tall">
+        <canvas id="feeling-chart" aria-label="Feelings by frequency"></canvas>
+        <p class="chart-empty" id="feeling-chart-empty" hidden></p>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { initWellbeingPage } from './js/wellbeing.js?v=7';
+    initWellbeingPage();
+  </script>
+</body>
+</html>

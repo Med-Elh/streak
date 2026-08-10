@@ -6,14 +6,15 @@
  * and the deadline rather than a checkbox.
  */
 
-import { supabase, describeError } from './supabase.js';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js';
-import { requireActiveProfile } from './profiles.js';
+import { supabase, describeError } from './supabase.js?v=7';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=7';
+import { requireActiveProfile } from './profiles.js?v=7';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
-  statRing, formatDate, todayISO,
-} from './ui.js';
-import { PRIORITIES, OBJECTIVE_STATUSES, OBJECTIVE_UNITS, options, labelFor } from './constants.js';
+  statRing, formatDate, todayISO, beat,
+  applyProfileTheme,
+} from './ui.js?v=7';
+import { PRIORITIES, OBJECTIVE_STATUSES, OBJECTIVE_UNITS, options, labelFor } from './constants.js?v=7';
 
 const state = {
   profile: null,
@@ -150,7 +151,9 @@ function renderTasks() {
   if (!open.length) {
     refs.taskList.append(emptyState(emptyTaskState()));
   } else {
-    for (const task of open) refs.taskList.append(taskRow(task));
+    const list = el('div', { class: 'task-list' });
+    for (const task of open) list.append(taskRow(task));
+    refs.taskList.append(list);
   }
 
   // The "Done today" group only makes sense while you're looking at open work.
@@ -169,6 +172,7 @@ function renderTasks() {
     }
   }
 
+  renderTodayProgress();
   refs.taskCount.textContent = `${state.tasks.filter((t) => !t.done).length} open`;
 }
 
@@ -194,43 +198,92 @@ function taskRow(task) {
   const overdue = isOverdue(task);
   const priority = labelFor(PRIORITIES, task.priority);
 
+  const card = el('div', {
+    class: 'task-card',
+    dataset: {
+      done: String(task.done),
+      priority: task.priority,
+      overdue: String(overdue),
+    },
+  });
+
   const checkbox = el('input', {
     type: 'checkbox',
     checked: task.done,
     'aria-label': task.done ? `Reopen ${task.title}` : `Complete ${task.title}`,
-    onchange: () => toggleTask(task, checkbox.checked, checkbox),
   });
+  checkbox.addEventListener('change', () => toggleTask(task, checkbox.checked, checkbox, card));
 
-  const meta = el('span', { class: 'task-row__meta' }, [
-    el('span', {
-      class: 'priority-dot',
-      dataset: { priority: task.priority },
-      'aria-hidden': 'true',
-    }),
-    el('span', { text: `${priority} priority` }),
-    task.due_date
-      ? el('span', {
-          class: `task-row__due${overdue ? ' task-row__due--overdue' : ''}`,
-          text: `${overdue ? 'Overdue · ' : 'Due '}${formatDate(task.due_date, { day: 'numeric', month: 'short' })}`,
-        })
-      : null,
-  ]);
-
-  return el('div', { class: 'task-row', dataset: { done: String(task.done) } }, [
+  card.append(
     checkbox,
-    el('span', { class: 'task-row__body' }, [
-      el('span', { class: 'task-row__title', text: task.title }),
-      task.notes ? el('span', { class: 'task-row__notes', text: task.notes }) : null,
-      meta,
+    el('div', { class: 'task-card__body' }, [
+      el('span', { class: 'task-card__title', text: task.title }),
+      task.notes ? el('span', { class: 'task-card__notes', text: task.notes }) : null,
+      el('span', { class: 'task-card__meta' }, [
+        // The colour on the edge is repeated as a word, so it never carries the
+        // meaning by itself.
+        el('span', { text: `${priority} priority` }),
+        task.due_date
+          ? (overdue
+              ? el('span', {
+                  class: 'chip chip--overdue',
+                  text: `Overdue · ${formatDate(task.due_date, { day: 'numeric', month: 'short' })}`,
+                })
+              : el('span', {
+                  text: `Due ${formatDate(task.due_date, { day: 'numeric', month: 'short' })}`,
+                }))
+          : null,
+      ]),
     ]),
-    el('button', {
+    el('div', { class: 'task-card__actions' }, el('button', {
       class: 'btn btn--ghost btn--sm',
       type: 'button',
       text: 'Delete',
       'aria-label': `Delete ${task.title}`,
       onclick: () => removeTask(task),
-    }),
-  ]);
+    })),
+  );
+
+  return card;
+}
+
+/** "3 of 7 done today" — the thing you actually want to know at a glance. */
+function renderTodayProgress() {
+  const today = todayISO();
+  const dueToday = state.tasks.filter((t) => !t.done && t.due_date === today);
+  const doneToday = completedToday(state.tasks, today);
+  const total = dueToday.length + doneToday.length;
+
+  clear(refs.todayProgress);
+  if (!total) {
+    refs.todayProgress.hidden = true;
+    return;
+  }
+
+  const percent = Math.round((doneToday.length / total) * 100);
+  refs.todayProgress.hidden = false;
+  refs.todayProgress.dataset.complete = String(doneToday.length === total);
+
+  refs.todayProgress.append(
+    el('div', { class: 'today-progress__head' }, [
+      el('span', { class: 'today-progress__count' }, [
+        el('b', { text: String(doneToday.length) }),
+        el('span', { text: ` of ${total} done today` }),
+      ]),
+      el('span', {
+        class: 'today-progress__note',
+        text: doneToday.length === total ? 'All clear' : `${total - doneToday.length} to go`,
+      }),
+    ]),
+    el('div', {
+      class: 'today-progress__track',
+      role: 'progressbar',
+      'aria-valuenow': String(percent),
+      'aria-valuemin': '0',
+      'aria-valuemax': '100',
+      'aria-label': 'Tasks done today',
+    }, el('span', { class: 'today-progress__fill', style: `width: ${percent}%` })),
+  );
 }
 
 /* ------------------------------------------------------ render objectives -- */
@@ -276,8 +329,13 @@ function objectiveCard(objective) {
   const deadline = deadlineText(objective);
   const editing = state.editingObjective === objective.id;
 
+  // The ring warms as the target comes into reach, and goes green on arrival.
+  const nearing = !achieved && percent >= 75;
+  const modifier = achieved || percent >= 100 ? ' objective-card--done'
+    : nearing ? ' objective-card--near' : '';
+
   const card = el('div', {
-    class: `objective-card${achieved ? ' objective-card--achieved' : ''}`,
+    class: `objective-card${achieved ? ' objective-card--achieved' : ''}${modifier}`,
   }, [
     el('span', { class: 'objective-card__title', text: objective.title }),
     statRing({
@@ -285,7 +343,8 @@ function objectiveCard(objective) {
       max: 100,
       display: `${Math.round(percent)}%`,
       label: achieved ? 'Achieved' : 'Progress',
-      tone: achieved ? 'positive' : 'accent',
+      tone: achieved || percent >= 100 ? 'positive' : 'accent',
+      size: 'lg',
     }),
     el('span', { class: 'objective-card__numbers', text: progressLabel(objective) }),
     el('span', {
@@ -393,9 +452,21 @@ async function addTask(event) {
   }
 }
 
-async function toggleTask(task, done, checkbox) {
+/**
+ * Completing runs as a small sequence: the rule draws across the title, the
+ * card folds away, and only then does the list rearrange. Reopening is instant
+ * — undoing something shouldn't make you wait through a victory lap.
+ */
+async function toggleTask(task, done, checkbox, card) {
   checkbox.disabled = true;
   const patch = { done, completed_at: done ? new Date().toISOString() : null };
+
+  if (done && card) {
+    card.classList.add('is-completing');
+    await beat(360);
+    card.classList.add('is-collapsing');
+    await beat(300);
+  }
 
   try {
     const { data, error } = await supabase
@@ -412,6 +483,7 @@ async function toggleTask(task, done, checkbox) {
     renderTasks();
   } catch (error) {
     checkbox.checked = !done;   // put the tick back where it was
+    card?.classList.remove('is-completing', 'is-collapsing');
     toast(error.message, { type: 'error' });
   } finally {
     checkbox.disabled = false;
@@ -572,6 +644,7 @@ export async function initTasksPage() {
   await requireSession();
   const profile = await requireActiveProfile();
   state.profile = profile;
+  applyProfileTheme(profile.id);
 
   document.body.prepend(
     topbar({
@@ -588,6 +661,7 @@ export async function initTasksPage() {
     quickPriority: document.getElementById('quick-priority'),
     quickDue: document.getElementById('quick-due'),
     taskList: document.getElementById('task-list'),
+    todayProgress: document.getElementById('today-progress'),
     taskDone: document.getElementById('task-done'),
     taskCount: document.getElementById('task-count'),
     filters: document.getElementById('task-filters'),

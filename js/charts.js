@@ -9,7 +9,7 @@
  */
 
 import Chart from 'https://esm.sh/chart.js@4/auto';
-import { formatMoney, compactMoney } from './ui.js';
+import { formatMoney, compactMoney } from './ui.js?v=7';
 
 /* Registry of live charts, so a theme flip can rebuild them with new colours. */
 const live = new Map();
@@ -329,11 +329,19 @@ const breakEvenLine = {
  * total is the thing you actually read, and a flat block of colour would fight
  * the grid for attention. The last point is the only dot: it's where you are.
  */
-export function equityCurveChart(canvas, { labels, values }) {
+export function equityCurveChart(canvas, { labels, values, mode = 'amount' }) {
   const builder = () => {
     const c = chrome();
     const line = c.positive;
     const lastIndex = values.length - 1;
+    // In percent mode the numbers are already a ratio of the starting balance,
+    // so they must not go near the currency helpers.
+    const format = mode === 'percent'
+      ? (v) => `${Number(v).toFixed(2)}%`
+      : (v) => formatMoney(v);
+    const tick = mode === 'percent'
+      ? (v) => `${Number(v).toFixed(Math.abs(v) >= 10 ? 0 : 1)}%`
+      : (v) => compactMoney(v);
 
     return {
       type: 'line',
@@ -372,7 +380,7 @@ export function equityCurveChart(canvas, { labels, values }) {
           breakEvenLine: { color: c.axis },
           tooltip: {
             ...baseOptions(c).plugins.tooltip,
-            callbacks: { label: (ctx) => ` ${formatMoney(ctx.parsed.y)}` },
+            callbacks: { label: (ctx) => ` ${format(ctx.parsed.y)}` },
           },
         },
         scales: {
@@ -394,7 +402,7 @@ export function equityCurveChart(canvas, { labels, values }) {
               font: { family: c.mono, size: 11 },
               padding: 10,
               maxTicksLimit: 6,
-              callback: (v) => compactMoney(v),
+              callback: (v) => tick(v),
             },
           },
         },
@@ -521,6 +529,61 @@ export function rateBarChart(canvas, { labels, values, counts, slot = 1 }) {
                 const n = counts?.[ctx.dataIndex] ?? 0;
                 return ` ${Math.round(ctx.parsed.x)}% of ${n} trade${n === 1 ? '' : 's'}`;
               },
+            },
+          },
+        },
+      },
+    };
+  };
+  return mount(canvas, builder(), builder);
+}
+
+/**
+ * Counts by category, each bar in its own colour. Horizontal, because the
+ * labels are words and words read better along the axis than under it.
+ */
+export function countBarChart(canvas, { labels, values, colors, unit = 'time' }) {
+  const builder = () => {
+    const c = chrome();
+    return {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Count',
+          data: values,
+          backgroundColor: colors,
+          borderRadius: 4,
+          borderSkipped: false,
+          maxBarThickness: 30,
+        }],
+      },
+      options: {
+        ...baseOptions(c),
+        indexAxis: 'y',
+        scales: {
+          x: {
+            beginAtZero: true,
+            grid: { color: c.grid, drawTicks: false },
+            border: { display: false },
+            ticks: {
+              color: c.faint,
+              font: { family: c.mono, size: 11 },
+              precision: 0,
+            },
+          },
+          y: {
+            grid: { display: false },
+            border: { color: c.axis },
+            ticks: { color: c.muted, font: { family: c.font, size: 11 } },
+          },
+        },
+        plugins: {
+          ...baseOptions(c).plugins,
+          tooltip: {
+            ...baseOptions(c).plugins.tooltip,
+            callbacks: {
+              label: (ctx) => ` ${ctx.parsed.x} ${unit}${ctx.parsed.x === 1 ? '' : 's'}`,
             },
           },
         },

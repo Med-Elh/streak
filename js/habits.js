@@ -10,14 +10,15 @@
  *    at least one habit was done. Requiring all of them punishes adding a habit.
  */
 
-import { supabase, describeError } from './supabase.js';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js';
-import { listProfiles, requireActiveProfile } from './profiles.js';
+import { supabase, describeError } from './supabase.js?v=7';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=7';
+import { listProfiles, requireActiveProfile } from './profiles.js?v=7';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
-  streakMark, todayISO, formatDate, initials,
-} from './ui.js';
-import { completionChart } from './charts.js';
+  todayISO, formatDate, initials, beat,
+  applyProfileTheme,
+} from './ui.js?v=7';
+import { completionChart } from './charts.js?v=7';
 
 const DAY = 86400000;
 /** Streaks can run long; a year of history is plenty to walk back through. */
@@ -30,6 +31,7 @@ const state = {
   entries: [],       // { habit_id, date } for completed entries in the window
   filters: { profileId: 'all', habitId: 'all', days: 30 },
   editingHabit: null,
+  lastHeroStreak: 0,
   mode: 'solo',      // 'solo' | 'comparison'
 };
 
@@ -145,98 +147,279 @@ async function toggleToday(habit, done) {
 
 /* ---------------------------------------------------------------- render -- */
 
+/** The ring fills over a month; a longer streak keeps it full and glowing. */
+const RING_TARGET = 30;
+
+function renderHero(mount) {
+  const streak = profileStreak(state.profile.id);
+  const mine = activeHabits(state.profile.id);
+  const today = todayISO();
+  const done = doneSet(mine.map((h) => h.id)).get(today) ?? new Set();
+  const remaining = mine.length - done.size;
+
+  const circumference = 2 * Math.PI * 74;
+  const ratio = Math.min(streak / RING_TARGET, 1);
+
+  clear(mount);
+  const hero = el('div', { class: 'streak-hero', dataset: { count: String(streak) } });
+
+  const dial = el('div', { class: 'streak-hero__dial' });
+  dial.innerHTML = `
+    <svg viewBox="0 0 168 168" aria-hidden="true">
+      <defs>
+        <linearGradient id="streak-hero-gradient" x1="0" y1="1" x2="0.4" y2="0">
+          <stop offset="0%" stop-color="var(--flame-to)" />
+          <stop offset="100%" stop-color="var(--flame-from)" />
+        </linearGradient>
+      </defs>
+      <circle class="streak-hero__track" cx="84" cy="84" r="74" />
+      <circle class="streak-hero__arc" cx="84" cy="84" r="74"
+        stroke-dasharray="${circumference.toFixed(1)}"
+        stroke-dashoffset="${(circumference * (1 - ratio)).toFixed(1)}" />
+    </svg>`;
+  dial.append(el('div', { class: 'streak-hero__inner' }, [
+    el('span', { class: 'streak-hero__count', text: String(streak) }),
+    el('span', { class: 'streak-hero__unit', text: streak === 1 ? 'day' : 'days' }),
+  ]));
+
+  hero.append(dial, el('div', { class: 'streak-hero__body' }, [
+    el('p', { class: 'eyebrow', text: 'Current streak' }),
+    el('h2', {
+      class: 'streak-hero__title',
+      text: streak === 0
+        ? 'Today is day one.'
+        : streak === 1
+          ? 'One day down.'
+          : `${streak} days and counting.`,
+    }),
+    el('p', {
+      class: 'streak-hero__line',
+      text: !mine.length
+        ? 'Add a habit and the count starts tonight.'
+        : remaining === 0
+          ? 'Everything ticked today. The streak is safe.'
+          : `${remaining} habit${remaining === 1 ? '' : 's'} left today to keep it going.`,
+    }),
+  ]));
+
+  mount.append(hero);
+  refs.hero = hero;
+}
+
 function renderToday(mount) {
   const mine = activeHabits(state.profile.id);
   clear(mount);
 
   if (!mine.length) {
-    mount.append(
-      emptyState({
-        title: archivedHabits(state.profile.id).length ? 'Nothing being tracked' : 'No habits yet',
-        body: archivedHabits(state.profile.id).length
-          ? 'Everything here is archived. Restore one below, or start something new.'
-          : 'Add the first thing you want to do every day. The streak starts the day you tick it.',
-        actionLabel: 'Add a habit',
-        onAction: openHabitModal,
-      }),
-    );
+    mount.append(archivedHabits(state.profile.id).length
+      ? invite({
+          emoji: '📦',
+          title: 'Nothing being tracked',
+          body: 'Everything here is archived. Restore one below, or start something new.',
+          action: 'Add a habit',
+        })
+      : invite({
+          emoji: '🔥',
+          title: 'Light the first one',
+          body: 'Pick one small thing you want to do every day. Tick it tonight and the streak starts at one — that is the whole trick.',
+          action: 'Add your first habit',
+        }));
     return;
   }
 
   const today = todayISO();
   const done = doneSet(mine.map((h) => h.id)).get(today) ?? new Set();
 
-  for (const habit of mine) mount.append(habitRow(habit, done.has(habit.id)));
+  const grid = el('div', { class: 'habit-grid' });
+  for (const habit of mine) grid.append(habitCard(habit, done.has(habit.id)));
+  mount.append(grid);
 }
 
-/**
- * The row is a container, not a button — it holds the tick target and the
- * manage controls, and a button inside a button isn't valid markup.
- */
-function habitRow(habit, isDone) {
-  const streak = habitStreak(habit.id);
+function invite({ emoji, title, body, action }) {
+  return el('div', { class: 'invite' }, [
+    el('span', { class: 'invite__flame', 'aria-hidden': 'true', text: emoji }),
+    el('p', { class: 'invite__title', text: title }),
+    el('p', { text: body }),
+    el('button', {
+      class: 'btn btn--primary btn--lg',
+      type: 'button',
+      text: action,
+      onclick: () => openHabitModal(),
+    }),
+  ]);
+}
 
-  const check = el('button', {
-    class: 'habit-check',
+const DOW_INITIALS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+function habitCard(habit, isDone) {
+  const streak = habitStreak(habit.id);
+  const today = todayISO();
+  const dates = new Set(state.entries.filter((e) => e.habit_id === habit.id).map((e) => e.date));
+
+  const card = el('div', {
+    class: 'habit-card',
+    dataset: { done: String(isDone), streak: String(streak) },
+  });
+
+  const tick = el('button', {
+    class: 'habit-tick',
     type: 'button',
     'aria-pressed': String(isDone),
     'aria-label': isDone ? `Untick ${habit.name} for today` : `Tick ${habit.name} for today`,
-    text: '✓',
-    onclick: async () => {
-      check.disabled = true;
-      try {
-        await toggleToday(habit, !isDone);
-        toast(isDone ? `${habit.name} unticked.` : `${habit.name} done today.`, {
-          type: 'success',
-          duration: 2200,
-        });
-        renderAll();
-      } catch (error) {
-        toast(error.message, { type: 'error' });
-        check.disabled = false;
-      }
-    },
-  });
+  }, [
+    el('span', { class: 'habit-tick__mark', 'aria-hidden': 'true', text: '✓' }),
+    el('span', { text: isDone ? 'Done today' : 'Mark done today' }),
+  ]);
 
-  return el('div', { class: 'habit-row', dataset: { done: String(isDone) } }, [
-    check,
-    el('span', { class: 'habit-row__body' }, [
-      el('span', { class: 'habit-row__name' }, [
-        habit.icon ? el('span', { 'aria-hidden': 'true', text: habit.icon }) : null,
-        el('span', { text: habit.name }),
-      ]),
+  tick.addEventListener('click', () => onTick(habit, isDone, tick, card));
+
+  card.append(
+    el('div', { class: 'habit-card__top' }, [
       el('span', {
-        class: 'habit-row__meta',
-        text: streak
-          ? `${streak}-day streak · ${habit.target_per_week}× a week`
-          : `${habit.target_per_week}× a week`,
+        class: 'habit-card__icon',
+        'aria-hidden': 'true',
+        text: habit.icon || '🔥',
       }),
+      el('div', { class: 'habit-card__meta' }, [
+        el('p', { class: 'habit-card__name', text: habit.name }),
+        el('p', { class: 'habit-card__target', text: `${habit.target_per_week}× a week` }),
+      ]),
+      el('div', { class: 'habit-card__streak' }, [
+        el('span', { class: 'habit-card__streak-num', text: String(streak) }),
+        el('span', { class: 'habit-card__streak-unit', text: streak === 1 ? 'day' : 'days' }),
+      ]),
     ]),
-    streakMark(streak, { small: true }),
+    tick,
+    weekDots(dates, today),
+    contributionGrid(habit, dates, today),
     el('div', { class: 'habit-row__actions' }, [
       el('button', {
-        class: 'btn btn--ghost btn--sm',
-        type: 'button',
-        text: 'Edit',
-        'aria-label': `Edit ${habit.name}`,
-        onclick: () => openHabitModal(habit),
+        class: 'btn btn--ghost btn--sm', type: 'button', text: 'Edit',
+        'aria-label': `Edit ${habit.name}`, onclick: () => openHabitModal(habit),
       }),
       el('button', {
-        class: 'btn btn--ghost btn--sm',
-        type: 'button',
-        text: 'Archive',
-        'aria-label': `Archive ${habit.name}`,
-        onclick: () => setArchived(habit, true),
+        class: 'btn btn--ghost btn--sm', type: 'button', text: 'Archive',
+        'aria-label': `Archive ${habit.name}`, onclick: () => setArchived(habit, true),
       }),
       el('button', {
-        class: 'btn btn--danger btn--sm',
-        type: 'button',
-        text: 'Delete',
-        'aria-label': `Delete ${habit.name}`,
-        onclick: () => removeHabit(habit),
+        class: 'btn btn--danger btn--sm', type: 'button', text: 'Delete',
+        'aria-label': `Delete ${habit.name}`, onclick: () => removeHabit(habit),
       }),
     ]),
-  ]);
+  );
+
+  return card;
+}
+
+/**
+ * The tick takes a moment on purpose. Ticking is the one thing this app is for,
+ * so it gets a beat of acknowledgement before the page rearranges itself.
+ */
+async function onTick(habit, wasDone, tick, card) {
+  tick.disabled = true;
+  const extending = !wasDone;
+
+  try {
+    if (extending) {
+      tick.classList.add('is-ticking');
+      card.dataset.done = 'true';
+      card.querySelector('.habit-tick span:last-child').textContent = 'Done today';
+    }
+
+    await toggleToday(habit, extending);
+
+    if (extending) {
+      const grew = profileStreak(state.profile.id) > state.lastHeroStreak;
+      if (grew) {
+        refs.hero?.classList.add('is-celebrating');
+        card.classList.add('is-celebrating');
+      }
+      await beat(520);
+    }
+
+    toast(wasDone ? `${habit.name} unticked.` : `${habit.name} done today.`, {
+      type: 'success',
+      duration: 2200,
+    });
+    renderAll();
+  } catch (error) {
+    toast(error.message, { type: 'error' });
+    tick.disabled = false;
+    tick.classList.remove('is-ticking');
+    card.dataset.done = String(wasDone);
+  }
+}
+
+function weekDots(dates, today) {
+  const row = el('div', { class: 'week-dots', role: 'group', 'aria-label': 'Last seven days' });
+  for (let i = 6; i >= 0; i -= 1) {
+    const date = shiftDays(today, -i);
+    const done = dates.has(date);
+    // Monday-first initials, aligned to the real weekday of each column.
+    const dow = (new Date(`${date}T12:00:00`).getDay() + 6) % 7;
+    row.append(el('div', {
+      class: 'week-dot',
+      dataset: { done: String(done), today: String(date === today) },
+      title: `${formatDate(date)} — ${done ? 'done' : 'not done'}`,
+    }, [
+      el('span', { class: 'week-dot__mark' }),
+      el('span', { class: 'week-dot__label', text: DOW_INITIALS[dow] }),
+    ]));
+  }
+  return row;
+}
+
+/**
+ * A year of check-ins. A single habit is only ever done or not, so intensity
+ * comes from the length of the run each day belonged to — a long streak reads
+ * darker than a scattering of one-off days, which is the thing worth seeing.
+ */
+function contributionGrid(habit, dates, today) {
+  const wrap = el('div', { class: 'contrib' });
+  const grid = el('div', {
+    class: 'contrib__grid',
+    role: 'img',
+    'aria-label': `${dates.size} check-ins for ${habit.name} in the last year`,
+  });
+
+  // Start on the Monday on or before a year ago, so columns are whole weeks.
+  const start = shiftDays(today, -363);
+  const startDow = (new Date(`${start}T12:00:00`).getDay() + 6) % 7;
+  const first = shiftDays(start, -startDow);
+
+  let run = 0;
+  const levels = new Map();
+  for (let i = 0; i < 371; i += 1) {
+    const date = shiftDays(first, i);
+    if (dates.has(date)) {
+      run += 1;
+      levels.set(date, run >= 21 ? 4 : run >= 7 ? 3 : run >= 3 ? 2 : 1);
+    } else {
+      run = 0;
+    }
+  }
+
+  for (let i = 0; i < 371; i += 1) {
+    const date = shiftDays(first, i);
+    if (date > today) break;
+    const level = levels.get(date) ?? 0;
+    grid.append(el('div', {
+      class: 'contrib__cell',
+      dataset: { level: String(level) },
+      title: `${formatDate(date)} — ${level ? 'done' : 'not done'}`,
+    }));
+  }
+
+  wrap.append(
+    el('div', { class: 'contrib__scroll' }, grid),
+    el('div', { class: 'contrib__legend' }, [
+      el('span', { text: 'Less' }),
+      ...[0, 1, 2, 3, 4].map((level) =>
+        el('span', { class: 'contrib__cell', dataset: { level: String(level) } })),
+      el('span', { text: 'More' }),
+    ]),
+  );
+  return wrap;
 }
 
 /**
@@ -355,22 +538,34 @@ function renderBoard(mount) {
     return;
   }
 
-  const board = el('div', { class: 'board' });
+  // Only a non-zero streak can lead, and a tie means nobody is ahead.
+  const top = ranked[0]?.streak ?? 0;
+  const leaders = ranked.filter((r) => r.streak === top && top > 0);
+  const soleLeader = leaders.length === 1 ? leaders[0].profile.id : null;
+
+  const board = el('div', { class: 'scoreboard' });
   ranked.forEach((row, index) => {
+    const isLeader = row.profile.id === soleLeader;
     board.append(
       el('div', {
-        class: 'board__row',
+        class: `score-row${isLeader ? ' score-row--leader' : ''}`,
         dataset: { me: String(row.profile.id === state.profile.id) },
       }, [
-        el('span', { class: 'board__rank num', text: String(index + 1) }),
+        el('span', { class: 'score-row__rank', text: String(index + 1) }),
         el('span', {
-          class: 'avatar avatar--sm',
+          class: 'avatar',
           style: `--avatar: ${row.profile.avatar_color}`,
           'aria-hidden': 'true',
           text: initials(row.profile.name),
         }),
-        el('span', { class: 'board__name', text: row.profile.name }),
-        streakMark(row.streak, { small: true }),
+        el('span', { class: 'score-row__name', text: row.profile.name }),
+        isLeader
+          ? el('span', { class: 'score-row__crown', title: 'Longest streak', text: '👑' })
+          : null,
+        el('span', { class: 'score-row__streak' }, [
+          el('b', { text: String(row.streak) }),
+          el('span', { text: row.streak === 1 ? 'day' : 'days' }),
+        ]),
       ]),
     );
   });
@@ -433,6 +628,9 @@ function renderChart(canvas, emptyMount) {
 let refs = {};
 
 function renderAll() {
+  renderHero(refs.hero0);
+  // Remembered so the next tick can tell whether the streak actually grew.
+  state.lastHeroStreak = profileStreak(state.profile.id);
   renderToday(refs.today);
   renderArchived(refs.archived);
   renderBoard(refs.board);
@@ -463,6 +661,7 @@ export async function initHabitsPage() {
   await requireSession();
   const profile = await requireActiveProfile();
   state.profile = profile;
+  applyProfileTheme(profile.id);
 
   document.body.prepend(
     topbar({
@@ -474,6 +673,7 @@ export async function initHabitsPage() {
   );
 
   refs = {
+    hero0: document.getElementById('streak-hero'),
     today: document.getElementById('today-list'),
     archived: document.getElementById('archived-list'),
     habitTitle: document.getElementById('habit-title'),

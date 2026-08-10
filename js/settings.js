@@ -7,19 +7,19 @@
  * near-identical ones.
  */
 
-import { supabase, describeError } from './supabase.js';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js';
+import { supabase, describeError } from './supabase.js?v=7';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=7';
 import {
   requireActiveProfile, listProfiles, createProfile, renameProfile,
   recolorProfile, deleteProfile, updateCurrency, setActiveProfile,
-} from './profiles.js';
+} from './profiles.js?v=7';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
   initials, initMoney, setMoneyContext, moneyContext, formatMoney, useCurrency, swatchPicker,
   setTheme, effectiveTheme, currentTheme, applyProfileTheme,
-} from './ui.js';
-import { OPTION_KINDS, seedFor } from './constants.js';
-import { categoryColor, seriesColor } from './charts.js';
+} from './ui.js?v=7';
+import { OPTION_KINDS, seedFor } from './constants.js?v=7';
+import { categoryColor, seriesColor } from './charts.js?v=7';
 
 const state = {
   profile: null,
@@ -529,6 +529,9 @@ export async function initSettingsPage() {
     current: 'settings.html',
     onSwitchProfile: () => goTo(PICKER_PAGE),
     onSignOut: signOut,
+    // The segmented control below is showing the same setting — keep it honest
+    // when the top-bar icon changes it out from under it.
+    onThemeChange: () => renderTheme(),
   }));
 
   refs = {

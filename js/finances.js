@@ -7,14 +7,15 @@
  * too many.
  */
 
-import { supabase, describeError } from './supabase.js';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js';
-import { requireActiveProfile } from './profiles.js';
+import { supabase, describeError } from './supabase.js?v=7';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=7';
+import { requireActiveProfile } from './profiles.js?v=7';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
   formatMoney, formatDate, todayISO, moneyContext, initMoney, swatchPicker,
-} from './ui.js';
-import { categoryDoughnut, monthlyNetChart, seriesColor, categoryColor } from './charts.js';
+  applyProfileTheme,
+} from './ui.js?v=7';
+import { categoryDoughnut, monthlyNetChart, seriesColor, categoryColor } from './charts.js?v=7';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** Beyond six categories the palette is out of distinct hues, so the tail folds. */
@@ -381,6 +382,7 @@ export async function initFinancesPage() {
   await requireSession();
   const profile = await requireActiveProfile();
   state.profile = profile;
+  applyProfileTheme(profile.id);
   // Finance amounts are always entered and stored in dirhams.
   initMoney(profile, 'finances');
 

@@ -32,6 +32,21 @@ export function clear(node) {
   return node;
 }
 
+/* --------------------------------------------------------------- motion -- */
+
+export function prefersReducedMotion() {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+/**
+ * Waits, unless the viewer has asked for less motion — in which case every
+ * choreographed pause collapses to nothing and the result appears at once.
+ * Animation should be a reward, never a toll on getting the thing done.
+ */
+export function beat(ms) {
+  return new Promise((resolve) => setTimeout(resolve, prefersReducedMotion() ? 0 : ms));
+}
+
 /* --------------------------------------------------------------- toasts -- */
 
 function toastRegion() {
@@ -210,6 +225,18 @@ export function compactNumber(amount, { signed = true } = {}) {
   return `${sign}${Math.round(abs)}`;
 }
 
+/**
+ * A percentage. Currency-independent by definition — a ratio of two amounts in
+ * the same currency is the same number whichever one you display them in, so
+ * these never pass through the conversion helpers.
+ */
+export function formatPercent(value, { digits = 2, signed = false } = {}) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—';
+  const n = Number(value);
+  const sign = signed && n > 0 ? '+' : '';
+  return `${sign}${n.toFixed(digits)}%`;
+}
+
 export function formattedRate() {
   return money.rate.toLocaleString(undefined, {
     minimumFractionDigits: 2, maximumFractionDigits: 4,
@@ -287,6 +314,7 @@ export function initials(name = '') {
 const NAV = [
   ['habits.html', 'Habits'],
   ['tasks.html', 'Tasks'],
+  ['wellbeing.html', 'Wellbeing'],
   ['finances.html', 'Finances'],
   ['trading.html', 'Trading'],
   ['settings.html', 'Settings'],
@@ -297,7 +325,9 @@ const NAV = [
  * it can mark itself. Sign-out is passed in rather than imported, so this file
  * never has to know about auth.js.
  */
-export function topbar({ profile, current, onSwitchProfile, onSignOut, onCurrencyChange }) {
+export function topbar({
+  profile, current, onSwitchProfile, onSignOut, onCurrencyChange, onThemeChange,
+}) {
   return el('header', { class: 'topbar' }, [
     el('div', { class: 'topbar__inner' }, [
       el('a', { class: 'wordmark', href: 'profiles.html' }, [
@@ -317,6 +347,7 @@ export function topbar({ profile, current, onSwitchProfile, onSignOut, onCurrenc
       ),
       el('div', { class: 'spacer' }),
       onCurrencyChange ? currencySwitch(profile, onCurrencyChange) : null,
+      profile ? themeToggle(profile, onThemeChange) : null,
       profile
         ? el('button', {
             class: 'profile-chip',
@@ -341,6 +372,55 @@ export function topbar({ profile, current, onSwitchProfile, onSignOut, onCurrenc
       }),
     ]),
   ]);
+}
+
+/* Two icons in one button. Only the one for the theme you'd switch *to* is
+   visible; the other is rotated out and faded. */
+const SUN_MOON_SVG = `
+<svg class="theme-toggle__icon theme-toggle__sun" viewBox="0 0 24 24" aria-hidden="true">
+  <circle cx="12" cy="12" r="4.2" />
+  <g stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none">
+    <path d="M12 2.6v2.2M12 19.2v2.2M21.4 12h-2.2M4.8 12H2.6" />
+    <path d="M18.6 5.4l-1.6 1.6M7 17l-1.6 1.6M18.6 18.6L17 17M7 7L5.4 5.4" />
+  </g>
+</svg>
+<svg class="theme-toggle__icon theme-toggle__moon" viewBox="0 0 24 24" aria-hidden="true">
+  <path d="M20.4 14.2A8.6 8.6 0 0 1 9.8 3.6a8.6 8.6 0 1 0 10.6 10.6Z" />
+</svg>`;
+
+/**
+ * Sun/moon in the top bar. A two-way switch — Settings keeps the three-way
+ * control, since "follow the device" isn't a state a single icon can express.
+ * The choice is stored per profile, same key Settings writes.
+ */
+function themeToggle(profile, onChange) {
+  const button = el('button', {
+    class: 'btn btn--icon theme-toggle',
+    type: 'button',
+  });
+  button.innerHTML = SUN_MOON_SVG;
+
+  const paint = () => {
+    const showing = effectiveTheme();
+    button.dataset.themeState = showing;
+    const next = showing === 'dark' ? 'light' : 'dark';
+    button.setAttribute('aria-label', `Switch to ${next} theme`);
+    button.setAttribute('title', `Switch to ${next} theme`);
+  };
+
+  button.addEventListener('click', () => {
+    const next = effectiveTheme() === 'dark' ? 'light' : 'dark';
+    setTheme(next, profile.id);
+    paint();
+    onChange?.(next);
+  });
+
+  // Following the device and the device changes its mind — keep the icon honest.
+  window.matchMedia('(prefers-color-scheme: dark)')
+    .addEventListener('change', () => { if (currentTheme() === 'system') paint(); });
+
+  paint();
+  return button;
 }
 
 /**

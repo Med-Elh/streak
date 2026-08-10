@@ -8,20 +8,27 @@
  * fill you got is not always the fill you planned.
  */
 
-import { supabase, describeError } from './supabase.js';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js';
-import { requireActiveProfile } from './profiles.js';
+import { supabase, describeError } from './supabase.js?v=7';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=7';
+import { requireActiveProfile } from './profiles.js?v=7';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner, statRing,
-  formatSignedMoney, compactNumber, signClass, formatDate, todayISO,
+  formatSignedMoney, compactNumber, signClass, formatDate, todayISO, formatPercent,
   moneyContext, initMoney,
-} from './ui.js';
+  applyProfileTheme,
+} from './ui.js?v=7';
 import {
   equityCurveChart, signedBarChart, rateBarChart,
-} from './charts.js';
+} from './charts.js?v=7';
 import {
   INSTRUMENTS, SESSIONS, SETUPS, EMOTIONS, DIRECTIONS, OUTCOMES, options, loadOptions,
-} from './constants.js';
+} from './constants.js?v=7';
+import {
+  ACCOUNT_STATUSES, evaluate, groupAccounts, pickAccount,
+  listAccounts, createAccount, updateAccount, deleteAccount, setStatus,
+  loadSelectedAccountId, saveSelectedAccountId,
+  isDismissed, dismiss, clearDismissals, hasBaseline, percentOf,
+} from './accounts.js?v=7';
 
 const state = {
   profile: null,
@@ -33,6 +40,12 @@ const state = {
   calendarMonth: todayISO().slice(0, 7),
   editingId: null,
   lists: { instrument: INSTRUMENTS, session: SESSIONS, setup: SETUPS, emotion: EMOTIONS },
+  accounts: [],
+  account: null,
+  evaluation: null,
+  pendingStatus: null,
+  editingAccount: null,
+  equityMode: 'amount',   // 'amount' | 'percent'
 };
 
 let refs = {};
@@ -169,11 +182,14 @@ export function dateSpan(trades) {
 
 /* ------------------------------------------------------------------- data -- */
 
+/* Everything on this page is scoped to the selected account. */
+
 async function fetchTrades() {
+  if (!state.account) return [];
   const { data, error } = await supabase
     .from('trades')
     .select('*')
-    .eq('profile_id', state.profile.id)
+    .eq('account_id', state.account.id)
     .order('date', { ascending: false })
     .order('created_at', { ascending: false });
   if (error) throw new Error(describeError(error, 'Couldn’t load your trades.'));
@@ -181,10 +197,11 @@ async function fetchTrades() {
 }
 
 async function fetchRules() {
+  if (!state.account) return [];
   const { data, error } = await supabase
     .from('trading_rules')
     .select('id, rule, active')
-    .eq('profile_id', state.profile.id)
+    .eq('account_id', state.account.id)
     .order('created_at', { ascending: true });
   if (error) throw new Error(describeError(error, 'Couldn’t load your rules.'));
   return data ?? [];
@@ -265,9 +282,15 @@ async function submitTrade(event) {
     return;
   }
 
+  if (!state.account) {
+    showBanner(refs.formError, 'Create an account before logging a trade.');
+    return;
+  }
+
   const payload = {
     ...values,
     profile_id: state.profile.id,
+    account_id: state.account.id,
     outcome: outcomeFor(values.pnl),
   };
 
@@ -288,6 +311,8 @@ async function submitTrade(event) {
     sortTrades();
     resetForm();
     toast('Trade logged.', { type: 'success' });
+    // A new trade can move the account across a limit, so the banner is
+    // re-evaluated here rather than only on load.
     renderAll();
   } finally {
     setBusy(refs.submit, false);
@@ -367,9 +392,11 @@ async function addRule(event) {
   const text = refs.ruleInput.value.trim();
   if (!text) return;
 
+  if (!state.account) return;
+
   const { data, error } = await supabase
     .from('trading_rules')
-    .insert({ profile_id: state.profile.id, rule: text })
+    .insert({ profile_id: state.profile.id, account_id: state.account.id, rule: text })
     .select('id, rule, active')
     .single();
 
@@ -443,6 +470,18 @@ function renderStats() {
 
   refs.stats.append(
     statCard('Net P&L', formatSignedMoney(stats.total), stats.span, toneFor(stats.total)),
+    // Withheld rather than faked when the account has no starting balance:
+    // a return needs something to be a return on.
+    statCard(
+      'Return %',
+      hasBaseline(state.account)
+        ? formatPercent(percentOf(stats.total, state.account), { signed: true })
+        : '—',
+      hasBaseline(state.account)
+        ? `on ${formatSignedMoney(state.account.starting_balance).replace(/^\+/, '')}`
+        : 'Set a starting balance',
+      hasBaseline(state.account) ? toneFor(stats.total) : '',
+    ),
     statCard(
       'Win rate',
       stats.winRate === null ? '—' : `${stats.winRate.toFixed(0)}%`,
@@ -474,6 +513,155 @@ function renderStats() {
       stats.streak.length ? toneFor(stats.streak.kind === 'win' ? 1 : -1) : '',
     ),
   );
+}
+
+/* --------------------------------------------------------------- account -- */
+
+function renderAccountBar() {
+  const { open, closed } = groupAccounts(state.accounts);
+
+  clear(refs.accountSelect);
+  const fill = (label, list) => {
+    if (!list.length) return;
+    const group = el('optgroup', { label });
+    for (const account of list) {
+      group.append(el('option', { value: account.id, text: account.name }));
+    }
+    refs.accountSelect.append(group);
+  };
+  fill('Open', open);
+  fill('Closed', closed);
+  refs.accountSelect.append(el('option', { value: '__new', text: '+ New account' }));
+
+  if (state.account) refs.accountSelect.value = state.account.id;
+
+  clear(refs.accountPill);
+  if (state.account && state.account.status !== 'active') {
+    refs.accountPill.append(el('span', {
+      class: `pill pill--${state.account.status}`,
+      text: ACCOUNT_STATUSES.find((s) => s.value === state.account.status)?.label ?? state.account.status,
+      title: state.account.status_note || '',
+    }));
+  }
+
+  refs.accountEdit.disabled = !state.account;
+  renderAccountSummary();
+  renderAccountAlert();
+}
+
+/** Balance against the target, and how much drawdown room is left. */
+function renderAccountSummary() {
+  clear(refs.accountSummary);
+  if (!state.account) return;
+
+  const view = evaluate(state.account, state.trades, todayISO());
+  state.evaluation = view;
+
+  const bar = (label, percent, detail, tone) => el('div', { class: 'meter' }, [
+    el('div', { class: 'meter__head' }, [
+      el('span', { class: 'meter__label', text: label }),
+      el('span', { class: `meter__detail num ${tone}`, text: detail }),
+    ]),
+    el('div', {
+      class: 'meter__track',
+      role: 'progressbar',
+      'aria-valuenow': String(Math.round(percent)),
+      'aria-valuemin': '0',
+      'aria-valuemax': '100',
+      'aria-label': label,
+    }, el('span', {
+      class: `meter__fill meter__fill--${tone === 'num--negative' ? 'down' : 'up'}`,
+      style: `width: ${percent}%`,
+    })),
+  ]);
+
+  refs.accountSummary.append(el('div', { class: 'stat' }, [
+    el('span', { class: 'stat__label', text: 'Balance' }),
+    el('span', {
+      class: `stat__value ${signClass(view.netPnl)}`,
+      text: formatSignedMoney(view.balance).replace(/^\+/, ''),
+    }),
+    el('span', {
+      class: 'stat__meta',
+      text: `${formatSignedMoney(view.netPnl)} from ${formatSignedMoney(view.starting).replace(/^\+/, '')}`,
+    }),
+  ]));
+
+  if (view.targetPercent !== null) {
+    // "6.2% of 10%" when there's a balance to measure against; otherwise the
+    // amount still to go, which needs no baseline.
+    const gainPct = percentOf(view.netPnl, state.account);
+    const targetPct = percentOf(view.target, state.account);
+    const detail = gainPct !== null && targetPct !== null
+      ? `${formatPercent(gainPct, { digits: 1 })} of ${formatPercent(targetPct, { digits: 1 })}`
+      : `${formatSignedMoney(Math.max(view.target - view.netPnl, 0)).replace(/^\+/, '')} to go`;
+
+    refs.accountSummary.append(bar('Profit target', view.targetPercent, detail, 'num--positive'));
+  }
+
+  if (view.drawdownPercent !== null) {
+    refs.accountSummary.append(bar(
+      'Drawdown room',
+      view.drawdownPercent,
+      `${formatSignedMoney(Math.max(view.roomLeft, 0)).replace(/^\+/, '')} left`,
+      view.drawdownPercent < 25 ? 'num--negative' : 'num--muted',
+    ));
+  }
+}
+
+/**
+ * A suggestion, never a decision. The account keeps running until someone says
+ * otherwise — a wrongly auto-failed account is a worse outcome than a banner
+ * that sits there for a day.
+ */
+function renderAccountAlert() {
+  const view = state.evaluation;
+  const suggestion = view?.suggested;
+
+  if (!state.account || !suggestion || isDismissed(state.account.id, suggestion)) {
+    refs.accountAlert.hidden = true;
+    return;
+  }
+
+  refs.accountAlert.hidden = false;
+  refs.accountAlert.className = `banner account-alert banner--${suggestion === 'passed' ? 'success' : 'error'}`;
+  refs.accountAlertText.textContent = `${view.reason}. Mark it as ${suggestion}?`;
+  state.pendingStatus = suggestion;
+}
+
+async function applySuggestedStatus() {
+  const suggestion = state.pendingStatus;
+  if (!state.account || !suggestion) return;
+
+  try {
+    const updated = await setStatus(state.account.id, suggestion);
+    Object.assign(state.account, updated);
+    const index = state.accounts.findIndex((a) => a.id === updated.id);
+    if (index !== -1) state.accounts[index] = { ...state.accounts[index], ...updated };
+    toast(`Account marked ${suggestion}.`, { type: 'success' });
+    renderAccountBar();
+  } catch (error) {
+    toast(error.message, { type: 'error' });
+  }
+}
+
+async function switchAccount(accountId) {
+  const account = state.accounts.find((a) => a.id === accountId);
+  if (!account) return;
+
+  state.account = account;
+  saveSelectedAccountId(state.profile.id, account.id);
+  state.editingId = null;
+
+  refs.table.append(skeletonList(3, 'skeleton--text'));
+  try {
+    [state.trades, state.rules] = await Promise.all([fetchTrades(), fetchRules()]);
+  } catch (error) {
+    toast(error.message, { type: 'error' });
+    return;
+  }
+  renderRules();
+  renderAll();
 }
 
 /* -------------------------------------------------------- calendar heatmap -- */
@@ -652,10 +840,14 @@ function readRow(trade) {
     }
     if (col.key === 'date') return el('td', { text: formatDate(trade.date, { day: 'numeric', month: 'short', year: '2-digit' }) });
     if (col.key === 'pnl') {
-      return el('td', {
-        class: `align-right num ${signClass(trade.pnl)}`,
-        text: trade.pnl === null ? '—' : formatSignedMoney(trade.pnl),
-      });
+      const pct = percentOf(trade.pnl, state.account);
+      return el('td', { class: `align-right num ${signClass(trade.pnl)}` }, [
+        el('span', { text: trade.pnl === null ? '—' : formatSignedMoney(trade.pnl) }),
+        // The percentage only appears when there's a balance to measure against.
+        pct === null || trade.pnl === null
+          ? null
+          : el('span', { class: 'pnl-pct', text: formatPercent(pct, { signed: true }) }),
+      ]);
     }
     if (col.key === 'rr') {
       return el('td', { class: 'align-right num', text: trade.rr === null ? '—' : `${Number(trade.rr).toFixed(2)}R` });
@@ -802,13 +994,26 @@ function renderCharts() {
 
     logEquitySeries(chronological, values);
 
+    // Percent mode divides the same running total by the starting balance, so
+    // the shape is identical and only the scale changes.
+    const asPercent = state.equityMode === 'percent' && hasBaseline(state.account);
+    const plotted = asPercent
+      ? values.map((v) => Number(percentOf(v, state.account).toFixed(4)))
+      : values;
+
     toggleChart(refs.equity, refs.equityEmpty, null);
-    equityCurveChart(refs.equity, { labels, values });
+    equityCurveChart(refs.equity, {
+      labels,
+      values: plotted,
+      mode: asPercent ? 'percent' : 'amount',
+    });
 
     // Green by default, per the panel's design; a running total in the red says
     // so, because a loss printed in green is a lie the rest of the page doesn't tell.
     const total = values.at(-1) ?? 0;
-    refs.equityTotal.textContent = formatSignedMoney(total);
+    refs.equityTotal.textContent = asPercent
+      ? formatPercent(percentOf(total, state.account), { signed: true })
+      : formatSignedMoney(total);
     refs.equityTotal.className = `panel__total${total < 0 ? ' is-negative' : ''}`;
   }
 
@@ -928,12 +1133,139 @@ function renderAll() {
   renderTable();
   renderCharts();
   renderCalendar();
+  renderAccountBar();
+}
+
+/* ------------------------------------------------------ the account modal -- */
+
+function openAccountModal(account = null) {
+  refs.accountForm.reset();
+  showBanner(refs.accountError, null);
+  state.editingAccount = account?.id ?? null;
+
+  refs.accountModalTitle.textContent = account ? 'Edit account' : 'New account';
+  refs.accountSubmit.textContent = account ? 'Save account' : 'Create account';
+  refs.accountStatusField.hidden = !account;
+  refs.accountNoteField.hidden = !account;
+  refs.accountDelete.hidden = !account;
+
+  if (account) {
+    refs.accountName.value = account.name;
+    refs.accountBalance.value = account.starting_balance ?? '';
+    refs.accountTarget.value = account.profit_target ?? '';
+    refs.accountMaxDD.value = account.max_drawdown ?? '';
+    refs.accountDailyDD.value = account.daily_drawdown ?? '';
+    refs.accountStatus.value = account.status;
+    refs.accountNote.value = account.status_note ?? '';
+  }
+
+  refs.accountModal.showModal();
+  refs.accountName.focus();
+}
+
+/** Blank means "no limit", so an empty field must stay null rather than zero. */
+const optionalNumber = (input) => {
+  const raw = input.value.trim();
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+};
+
+async function submitAccount(event) {
+  event.preventDefault();
+  showBanner(refs.accountError, null);
+
+  const name = refs.accountName.value.trim();
+  const balance = Number(refs.accountBalance.value);
+
+  if (!name) {
+    showBanner(refs.accountError, 'Give the account a name.');
+    refs.accountName.focus();
+    return;
+  }
+  if (!Number.isFinite(balance)) {
+    showBanner(refs.accountError, 'Enter the starting balance.');
+    refs.accountBalance.focus();
+    return;
+  }
+
+  const values = {
+    name,
+    starting_balance: balance,
+    profit_target: optionalNumber(refs.accountTarget),
+    max_drawdown: optionalNumber(refs.accountMaxDD),
+    daily_drawdown: optionalNumber(refs.accountDailyDD),
+  };
+
+  const editing = state.editingAccount;
+  setBusy(refs.accountSubmit, true, 'Saving…');
+  try {
+    let saved;
+    if (editing) {
+      const previous = state.accounts.find((a) => a.id === editing);
+      const statusChanged = previous && previous.status !== refs.accountStatus.value;
+      saved = await updateAccount(editing, {
+        ...values,
+        status: refs.accountStatus.value,
+        status_note: refs.accountNote.value.trim() || null,
+        ...(statusChanged ? { status_changed_at: new Date().toISOString() } : {}),
+      });
+      // The limits may have moved; an old dismissal shouldn't hide a new breach.
+      clearDismissals(editing);
+      const index = state.accounts.findIndex((a) => a.id === editing);
+      state.accounts[index] = saved;
+      if (state.account?.id === editing) state.account = saved;
+    } else {
+      saved = await createAccount(state.profile.id, values);
+      state.accounts.push(saved);
+    }
+
+    refs.accountModal.close();
+    toast(editing ? 'Account saved.' : `${name} created.`, { type: 'success' });
+    await switchAccount(saved.id);
+  } catch (error) {
+    showBanner(refs.accountError, error.message);
+  } finally {
+    setBusy(refs.accountSubmit, false);
+  }
+}
+
+async function removeAccount() {
+  const account = state.accounts.find((a) => a.id === state.editingAccount);
+  if (!account) return;
+
+  const count = state.trades.length;
+  if (!window.confirm(
+    `Delete ${account.name}? Its ${count} trade${count === 1 ? '' : 's'} and its rules go too. This can't be undone.`,
+  )) return;
+
+  try {
+    await deleteAccount(account.id);
+    state.accounts = state.accounts.filter((a) => a.id !== account.id);
+    refs.accountModal.close();
+    toast(`${account.name} deleted.`, { type: 'success' });
+
+    const next = pickAccount(state.accounts, null);
+    if (next) {
+      await switchAccount(next.id);
+    } else {
+      state.account = null;
+      state.trades = [];
+      state.rules = [];
+      saveSelectedAccountId(state.profile.id, null);
+      renderRules();
+      renderAll();
+    }
+  } catch (error) {
+    toast(error.message, { type: 'error' });
+  }
 }
 
 export async function initTradingPage() {
   await requireSession();
   const profile = await requireActiveProfile();
   state.profile = profile;
+  applyProfileTheme(profile.id);
   // Trades are always entered and stored in dollars.
   initMoney(profile, 'trading');
 
@@ -973,6 +1305,27 @@ export async function initTradingPage() {
     notes: document.getElementById('notes'),
     screenshot: document.getElementById('screenshot'),
     submit: document.getElementById('trade-submit'),
+    accountSelect: document.getElementById('account-select'),
+    accountPill: document.getElementById('account-pill'),
+    accountEdit: document.getElementById('account-edit'),
+    accountSummary: document.getElementById('account-summary'),
+    accountAlert: document.getElementById('account-alert'),
+    accountAlertText: document.getElementById('account-alert-text'),
+    accountModal: document.getElementById('account-modal'),
+    accountModalTitle: document.getElementById('account-modal-title'),
+    accountForm: document.getElementById('account-form'),
+    accountError: document.getElementById('account-error'),
+    accountName: document.getElementById('account-name'),
+    accountBalance: document.getElementById('account-balance'),
+    accountTarget: document.getElementById('account-target'),
+    accountMaxDD: document.getElementById('account-maxdd'),
+    accountDailyDD: document.getElementById('account-dailydd'),
+    accountStatus: document.getElementById('account-status'),
+    accountStatusField: document.getElementById('account-status-field'),
+    accountNote: document.getElementById('account-note'),
+    accountNoteField: document.getElementById('account-note-field'),
+    accountSubmit: document.getElementById('account-submit'),
+    accountDelete: document.getElementById('account-delete'),
     rulesList: document.getElementById('rules-list'),
     ruleForm: document.getElementById('rule-form'),
     ruleInput: document.getElementById('rule-input'),
@@ -983,6 +1336,7 @@ export async function initTradingPage() {
     equity: document.getElementById('equity-chart'),
     equityEmpty: document.getElementById('equity-empty'),
     equityTotal: document.getElementById('equity-total'),
+    equityMode: document.getElementById('equity-mode'),
     calMonth: document.getElementById('cal-month'),
     calGrid: document.getElementById('cal-grid'),
     calSummary: document.getElementById('cal-summary'),
@@ -1028,10 +1382,18 @@ export async function initTradingPage() {
   refs.date.value = todayISO();
   refs.direction.value = 'long';
 
+  for (const status of ACCOUNT_STATUSES) {
+    refs.accountStatus.append(el('option', { value: status.value, text: status.label }));
+  }
+
   refs.table.append(skeletonList(4, 'skeleton--text'));
   refs.rulesList.append(skeletonList(2, 'skeleton--text'));
 
   try {
+    state.accounts = await listAccounts(profile.id);
+    state.account = pickAccount(state.accounts, loadSelectedAccountId(profile.id));
+    if (state.account) saveSelectedAccountId(profile.id, state.account.id);
+
     [state.trades, state.rules] = await Promise.all([fetchTrades(), fetchRules()]);
   } catch (error) {
     clear(refs.table).append(
@@ -1085,6 +1447,46 @@ function wireControls() {
 
   refs.calPrev.addEventListener('click', () => shiftMonth(-1));
   refs.calNext.addEventListener('click', () => shiftMonth(1));
+
+  refs.equityMode.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-equity-mode]');
+    if (!button) return;
+    if (button.dataset.equityMode === 'percent' && !hasBaseline(state.account)) {
+      toast('Set a starting balance on this account to see returns as a percentage.', { type: 'error' });
+      return;
+    }
+    state.equityMode = button.dataset.equityMode;
+    for (const b of refs.equityMode.querySelectorAll('[data-equity-mode]')) {
+      b.setAttribute('aria-pressed', String(b === button));
+    }
+    renderCharts();
+  });
+
+  refs.accountSelect.addEventListener('change', () => {
+    const value = refs.accountSelect.value;
+    if (value === '__new') {
+      // Put the select back before opening: cancelling must not strand it.
+      refs.accountSelect.value = state.account?.id ?? '';
+      openAccountModal();
+      return;
+    }
+    switchAccount(value);
+  });
+
+  refs.accountEdit.addEventListener('click', () => {
+    if (state.account) openAccountModal(state.account);
+  });
+
+  refs.accountForm.addEventListener('submit', submitAccount);
+  refs.accountDelete.addEventListener('click', removeAccount);
+  document.getElementById('account-cancel').addEventListener('click', () => refs.accountModal.close());
+  document.getElementById('account-close').addEventListener('click', () => refs.accountModal.close());
+
+  document.getElementById('alert-confirm').addEventListener('click', applySuggestedStatus);
+  document.getElementById('alert-dismiss').addEventListener('click', () => {
+    if (state.account && state.pendingStatus) dismiss(state.account.id, state.pendingStatus);
+    refs.accountAlert.hidden = true;
+  });
 
   for (const button of document.querySelectorAll('[data-grouping]')) {
     button.addEventListener('click', () => {

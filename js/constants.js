@@ -56,6 +56,30 @@ export const OBJECTIVE_UNITS = [
   'trades', 'days', 'sessions', 'pages', 'hours', 'MAD', 'USD', '%',
 ];
 
+/**
+ * Feelings, in the order they appear on the grid: the settled ones first, then
+ * the harder ones. Colours are existing semantic tokens rather than new hexes,
+ * so every feeling follows the theme without a second palette to maintain.
+ */
+export const FEELINGS = [
+  { value: 'Calm', icon: '🌿', token: '--series-2', tone: 'good' },
+  { value: 'Content', icon: '🙂', token: '--series-3', tone: 'good' },
+  { value: 'Energised', icon: '⚡', token: '--accent', tone: 'good' },
+  { value: 'Grateful', icon: '🌻', token: '--series-4', tone: 'good' },
+  { value: 'Tired', icon: '🌙', token: '--neutral', tone: 'difficult' },
+  { value: 'Anxious', icon: '🌀', token: '--series-5', tone: 'difficult' },
+  { value: 'Overwhelmed', icon: '🌊', token: '--info', tone: 'difficult' },
+  { value: 'Frustrated', icon: '💢', token: '--negative', tone: 'difficult' },
+  { value: 'Sad', icon: '🌧️', token: '--series-6', tone: 'difficult' },
+  { value: 'Restless', icon: '🦋', token: '--warning', tone: 'difficult' },
+];
+
+export const INTENSITY_LABELS = ['Barely', 'A little', 'Moderately', 'Strongly', 'Completely'];
+
+export function feeling(value) {
+  return FEELINGS.find((f) => f.value === value) ?? null;
+}
+
 /* -------------------------------------------------------------- editable -- */
 
 /**
@@ -80,7 +104,7 @@ export function seedFor(kind) {
  * don't. One query for all four kinds.
  */
 export async function loadOptions(profileId) {
-  const { supabase, describeError } = await import('./supabase.js');
+  const { supabase, describeError } = await import('./supabase.js?v=7');
 
   const { data, error } = await supabase
     .from('profile_options')
