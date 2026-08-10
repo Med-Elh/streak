@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en" data-booting>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Tasks · Streak.</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
+    rel="stylesheet" />
+
+  <link rel="stylesheet" href="css/tokens.css" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/components.css" />
+</head>
+
+<body>
+  <main class="page stack-lg">
+    <div class="page-head">
+      <div>
+        <p class="eyebrow">Tasks &amp; objectives</p>
+        <h1>What <span id="profile-name"></span> is working on</h1>
+      </div>
+    </div>
+
+    <div class="panel-pair">
+      <!-- Tasks -->
+      <section class="panel" aria-labelledby="tasks-title">
+        <div class="panel__head">
+          <span class="panel__label" id="tasks-title">Tasks</span>
+          <span class="num num--muted" id="task-count"></span>
+        </div>
+
+        <form class="quick-add" id="quick-add">
+          <input class="input quick-add__title" id="quick-title" maxlength="200"
+            placeholder="Add a task and press enter" autocomplete="off" aria-label="New task" />
+          <select class="select" id="quick-priority" aria-label="Priority"></select>
+          <input class="input" type="date" id="quick-due" aria-label="Due date" />
+          <button class="btn btn--primary" type="submit">Add</button>
+        </form>
+
+        <div class="segmented" role="group" aria-label="Filter tasks" id="task-filters">
+          <button type="button" data-filter="all" aria-pressed="true">All</button>
+          <button type="button" data-filter="today" aria-pressed="false">Today</button>
+          <button type="button" data-filter="overdue" aria-pressed="false">Overdue</button>
+          <button type="button" data-filter="done" aria-pressed="false">Done</button>
+        </div>
+
+        <div id="task-list"></div>
+        <div id="task-done"></div>
+      </section>
+
+      <!-- Objectives -->
+      <section class="panel" aria-labelledby="objectives-title">
+        <div class="panel__head">
+          <span class="panel__label" id="objectives-title">Objectives</span>
+          <button class="btn btn--secondary btn--sm" type="button" id="add-objective">Add objective</button>
+        </div>
+
+        <div id="objective-list"></div>
+        <div id="objective-closed"></div>
+      </section>
+    </div>
+  </main>
+
+  <dialog class="modal" id="objective-modal" aria-labelledby="objective-modal-title">
+    <form id="objective-form">
+      <div class="modal__head">
+        <h2 class="modal__title" id="objective-modal-title">Add an objective</h2>
+        <button class="btn btn--icon" type="button" id="objective-close" aria-label="Close">×</button>
+      </div>
+
+      <div class="modal__body stack">
+        <p class="banner banner--error" id="objective-error" role="alert" hidden></p>
+
+        <div class="field">
+          <label class="label" for="objective-title-input">Objective</label>
+          <input class="input" id="objective-title-input" maxlength="120" required autocomplete="off"
+            placeholder="Log 30 trades" />
+        </div>
+
+        <div class="entry-form">
+          <div class="field">
+            <label class="label" for="objective-target">Target</label>
+            <input class="input input--num" id="objective-target" type="number" min="0.01" step="any"
+              inputmode="decimal" required />
+          </div>
+
+          <div class="field">
+            <label class="label" for="objective-current">Starting from</label>
+            <input class="input input--num" id="objective-current" type="number" min="0" step="any"
+              inputmode="decimal" value="0" />
+          </div>
+
+          <div class="field">
+            <label class="label" for="objective-unit">Unit</label>
+            <input class="input" id="objective-unit" list="unit-list" maxlength="20"
+              autocomplete="off" placeholder="trades" />
+            <datalist id="unit-list"></datalist>
+          </div>
+
+          <div class="field">
+            <label class="label" for="objective-deadline">Deadline</label>
+            <input class="input" type="date" id="objective-deadline" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="label" for="objective-notes">Notes <span class="faint">(optional)</span></label>
+          <textarea class="textarea" id="objective-notes" maxlength="500"></textarea>
+        </div>
+      </div>
+
+      <div class="modal__foot">
+        <button class="btn btn--secondary" type="button" id="objective-cancel">Cancel</button>
+        <button class="btn btn--primary" type="submit" id="objective-submit">Add objective</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module">
+    import { initTasksPage } from './js/tasks.js';
+    initTasksPage();
+  </script>
+</body>
+</html>

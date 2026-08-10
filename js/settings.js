@@ -1,0 +1,580 @@
+/**
+ * Settings: profiles, the editable option lists, finance categories, currency
+ * and appearance.
+ *
+ * Everything here is a small list with the same shape — read, add, rename,
+ * delete — so it's built from one editable-list component rather than four
+ * near-identical ones.
+ */
+
+import { supabase, describeError } from './supabase.js';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js';
+import {
+  requireActiveProfile, listProfiles, createProfile, renameProfile,
+  recolorProfile, deleteProfile, updateCurrency, setActiveProfile,
+} from './profiles.js';
+import {
+  el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
+  initials, initMoney, setMoneyContext, moneyContext, formatMoney, useCurrency,
+  setTheme, effectiveTheme, currentTheme, applyProfileTheme,
+} from './ui.js';
+import { OPTION_KINDS, seedFor } from './constants.js';
+
+const state = {
+  profile: null,
+  profiles: [],
+  options: {},        // kind → [{ id, value }] of custom rows only
+  categories: [],
+  palette: [],
+};
+
+let refs = {};
+
+/* ---------------------------------------------------------------- helper -- */
+
+/**
+ * Wraps a write so no failure can end as a silent no-op: the caller gets false,
+ * the person gets a toast that says what didn't happen.
+ */
+async function guard(fallback, run) {
+  try {
+    return await run();
+  } catch (error) {
+    toast(error.message || fallback, { type: 'error' });
+    return false;
+  }
+}
+
+/** One row of an editable list: the value, a rename field, a delete button. */
+function listRow({ label, onRename, onDelete, swatch }) {
+  const input = el('input', {
+    class: 'input input--inline',
+    value: label,
+    'aria-label': `Rename ${label}`,
+  });
+
+  const commit = async () => {
+    const next = input.value.trim();
+    if (!next || next === label) {
+      input.value = label;
+      return;
+    }
+    if (!(await onRename(next))) input.value = label;
+  };
+
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') { event.preventDefault(); input.blur(); }
+    if (event.key === 'Escape') { input.value = label; input.blur(); }
+  });
+
+  return el('div', { class: 'edit-row' }, [
+    swatch ?? null,
+    input,
+    el('button', {
+      class: 'btn btn--danger btn--sm',
+      type: 'button',
+      text: 'Delete',
+      'aria-label': `Delete ${label}`,
+      onclick: onDelete,
+    }),
+  ]);
+}
+
+/* -------------------------------------------------------------- profiles -- */
+
+async function renderProfiles() {
+  clear(refs.profileList);
+
+  if (!state.profiles.length) {
+    refs.profileList.append(emptyState({
+      title: 'No profiles yet',
+      body: 'A profile holds one person’s habits, tasks, finances and trades.',
+      actionLabel: 'Add a profile',
+      onAction: () => refs.profileName.focus(),
+    }));
+    return;
+  }
+
+  for (const profile of state.profiles) {
+    const isActive = profile.id === state.profile.id;
+
+    const swatch = el('button', {
+      class: 'avatar avatar--sm',
+      type: 'button',
+      style: `--avatar: ${profile.avatar_color}`,
+      title: 'Change colour',
+      'aria-label': `Change colour for ${profile.name}`,
+      text: initials(profile.name),
+      onclick: () => cycleColour(profile),
+    });
+
+    const row = listRow({
+      label: profile.name,
+      swatch,
+      onRename: (next) => guard('Couldn’t rename that profile.', async () => {
+        await renameProfile(profile.id, next);
+        profile.name = next;
+        if (isActive) refs.profileHeading.textContent = next;
+        toast('Profile renamed.', { type: 'success', duration: 2000 });
+        return true;
+      }),
+      onDelete: () => removeProfile(profile),
+    });
+
+    if (isActive) row.append(el('span', { class: 'chip chip--accent', text: 'Active' }));
+    refs.profileList.append(row);
+  }
+}
+
+/** Colours come from the tokens, so clicking cycles rather than opening a picker. */
+async function cycleColour(profile) {
+  const index = state.palette.indexOf(profile.avatar_color);
+  const next = state.palette[(index + 1) % state.palette.length];
+
+  await guard('Couldn’t change that colour.', async () => {
+    await recolorProfile(profile.id, next);
+    profile.avatar_color = next;
+    await renderProfiles();
+    return true;
+  });
+}
+
+async function removeProfile(profile) {
+  if (state.profiles.length === 1) {
+    toast('This is the only profile. Add another before removing this one.', { type: 'error' });
+    return;
+  }
+  if (!window.confirm(
+    `Delete ${profile.name}? Their habits, tasks, finances and trades go with them. This can't be undone.`,
+  )) return;
+
+  await guard('Couldn’t remove that profile.', async () => {
+    await deleteProfile(profile.id);
+    state.profiles = state.profiles.filter((p) => p.id !== profile.id);
+    toast(`${profile.name} removed.`, { type: 'success' });
+
+    // Deleting the profile you're using leaves nothing to work on.
+    if (profile.id === state.profile.id) {
+      goTo(PICKER_PAGE);
+      return true;
+    }
+    await renderProfiles();
+    return true;
+  });
+}
+
+async function addProfile(event) {
+  event.preventDefault();
+  showBanner(refs.profileError, null);
+
+  const name = refs.profileName.value.trim();
+  if (!name) {
+    showBanner(refs.profileError, 'Give the profile a name.');
+    refs.profileName.focus();
+    return;
+  }
+
+  setBusy(refs.profileSubmit, true, 'Adding…');
+  try {
+    const colour = state.palette[state.profiles.length % state.palette.length];
+    const profile = await createProfile({ name, avatarColor: colour });
+    state.profiles.push(profile);
+    refs.profileName.value = '';
+    toast(`${name} added.`, { type: 'success' });
+    await renderProfiles();
+  } catch (error) {
+    showBanner(refs.profileError, error.message);
+  } finally {
+    setBusy(refs.profileSubmit, false);
+  }
+}
+
+/* --------------------------------------------------------- option lists -- */
+
+function renderOptions() {
+  clear(refs.optionLists);
+
+  for (const { kind, label } of OPTION_KINDS) {
+    const rows = state.options[kind] ?? [];
+    const usingSeed = rows.length === 0;
+
+    const list = el('div', { class: 'edit-list' });
+
+    if (usingSeed) {
+      // A profile that has never edited a list still needs to see what's in it.
+      list.append(el('p', { class: 'hint', text: 'Using the defaults. Add one to start your own list.' }));
+      for (const value of seedFor(kind)) {
+        list.append(el('div', { class: 'edit-row edit-row--muted' }, [
+          el('span', { class: 'edit-row__label', text: value }),
+          el('span', { class: 'chip', text: 'Default' }),
+        ]));
+      }
+    } else {
+      for (const row of rows) {
+        list.append(listRow({
+          label: row.value,
+          onRename: (next) => guard('Couldn’t rename that option.', async () => {
+            const { error } = await supabase
+              .from('profile_options')
+              .update({ value: next })
+              .eq('id', row.id);
+            if (error) throw new Error(describeError(error, 'Couldn’t rename that option.'));
+            row.value = next;
+            toast('Option renamed.', { type: 'success', duration: 2000 });
+            return true;
+          }),
+          onDelete: () => removeOption(kind, row),
+        }));
+      }
+    }
+
+    const form = el('form', { class: 'quick-add' });
+    const input = el('input', {
+      class: 'input quick-add__title',
+      maxlength: '40',
+      placeholder: `Add to ${label.toLowerCase()}`,
+      'aria-label': `Add to ${label}`,
+      autocomplete: 'off',
+    });
+    form.append(input, el('button', { class: 'btn btn--secondary', type: 'submit', text: 'Add' }));
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      addOption(kind, input);
+    });
+
+    refs.optionLists.append(el('div', { class: 'settings-block' }, [
+      el('h3', { class: 'card__title', text: label }),
+      list,
+      form,
+    ]));
+  }
+}
+
+/**
+ * The first custom value has to carry the defaults with it — otherwise adding
+ * one instrument would silently delete the other nine from every dropdown.
+ */
+async function addOption(kind, input) {
+  const value = input.value.trim();
+  if (!value) return;
+
+  const existing = state.options[kind] ?? [];
+  const rows = existing.length
+    ? [{ profile_id: state.profile.id, kind, value, sort_order: existing.length }]
+    : [...seedFor(kind), value].map((v, i) => ({
+        profile_id: state.profile.id, kind, value: v, sort_order: i,
+      }));
+
+  await guard('Couldn’t add that option.', async () => {
+    const { data, error } = await supabase
+      .from('profile_options')
+      .insert(rows)
+      .select('id, kind, value');
+
+    if (error) {
+      throw new Error(error.code === '23505'
+        ? 'That option is already on the list.'
+        : describeError(error, 'Couldn’t add that option.'));
+    }
+
+    state.options[kind] = [...existing, ...data];
+    input.value = '';
+    toast(`${value} added.`, { type: 'success', duration: 2000 });
+    renderOptions();
+    return true;
+  });
+}
+
+async function removeOption(kind, row) {
+  await guard('Couldn’t remove that option.', async () => {
+    const { error } = await supabase.from('profile_options').delete().eq('id', row.id);
+    if (error) throw new Error(describeError(error, 'Couldn’t remove that option.'));
+
+    state.options[kind] = state.options[kind].filter((r) => r.id !== row.id);
+    toast('Option removed.', { type: 'success', duration: 2000 });
+    renderOptions();
+    return true;
+  });
+}
+
+/* ----------------------------------------------------- finance categories -- */
+
+function renderCategories() {
+  clear(refs.categoryList);
+
+  if (!state.categories.length) {
+    refs.categoryList.append(emptyState({
+      title: 'No categories yet',
+      body: 'Categories sort your money in and out. Add the first one below.',
+    }));
+    return;
+  }
+
+  for (const category of state.categories) {
+    const swatch = el('span', {
+      class: 'legend__dot legend__dot--lg',
+      style: `background: ${category.color}`,
+      'aria-hidden': 'true',
+    });
+
+    const row = listRow({
+      label: category.name,
+      swatch,
+      onRename: (next) => guard('Couldn’t rename that category.', async () => {
+        const { error } = await supabase
+          .from('finance_categories')
+          .update({ name: next })
+          .eq('id', category.id);
+        if (error) {
+          throw new Error(error.code === '23505'
+            ? 'You already have a category with that name.'
+            : describeError(error, 'Couldn’t rename that category.'));
+        }
+        category.name = next;
+        toast('Category renamed.', { type: 'success', duration: 2000 });
+        return true;
+      }),
+      onDelete: () => removeCategory(category),
+    });
+
+    row.append(el('span', {
+      class: `chip ${category.kind === 'income' ? 'chip--win' : ''}`,
+      text: category.kind === 'income' ? 'In' : 'Out',
+    }));
+    refs.categoryList.append(row);
+  }
+}
+
+async function removeCategory(category) {
+  if (!window.confirm(
+    `Delete ${category.name}? Entries filed under it stay, but lose their category.`,
+  )) return;
+
+  await guard('Couldn’t remove that category.', async () => {
+    const { error } = await supabase.from('finance_categories').delete().eq('id', category.id);
+    if (error) throw new Error(describeError(error, 'Couldn’t remove that category.'));
+    state.categories = state.categories.filter((c) => c.id !== category.id);
+    toast('Category removed.', { type: 'success', duration: 2000 });
+    renderCategories();
+    return true;
+  });
+}
+
+async function addCategory(event) {
+  event.preventDefault();
+  const name = refs.categoryName.value.trim();
+  if (!name) {
+    refs.categoryName.focus();
+    return;
+  }
+
+  await guard('Couldn’t add that category.', async () => {
+    const { data, error } = await supabase
+      .from('finance_categories')
+      .insert({
+        profile_id: state.profile.id,
+        name,
+        kind: refs.categoryKind.value,
+        color: state.palette[state.categories.length % state.palette.length],
+      })
+      .select('id, name, kind, color')
+      .single();
+
+    if (error) {
+      throw new Error(error.code === '23505'
+        ? 'You already have a category with that name.'
+        : describeError(error, 'Couldn’t add that category.'));
+    }
+
+    state.categories.push(data);
+    refs.categoryName.value = '';
+    toast(`${name} added.`, { type: 'success', duration: 2000 });
+    renderCategories();
+    return true;
+  });
+}
+
+/* -------------------------------------------------------------- currency -- */
+
+/**
+ * Shows the rate working in both directions as it's typed, through the same
+ * helpers the pages use — so what it promises here is what they'll print.
+ */
+function renderRatePreview() {
+  const rate = Number(refs.rate.value);
+  if (!Number.isFinite(rate) || rate <= 0) {
+    refs.preview.textContent = 'Enter a rate above zero.';
+    return;
+  }
+
+  const saved = moneyContext();
+
+  useCurrency('trading');
+  setMoneyContext({ display: 'MAD', rate });
+  const tradeInMAD = formatMoney(100);
+
+  useCurrency('finances');
+  setMoneyContext({ display: 'USD', rate });
+  const spendInUSD = formatMoney(100);
+
+  useCurrency(saved.section);
+  setMoneyContext({ display: saved.display, rate: saved.rate });
+
+  refs.preview.textContent =
+    `A $100 trade shows as ${tradeInMAD} · 100 MAD of spending shows as ${spendInUSD}`;
+}
+
+async function saveCurrency(event) {
+  event.preventDefault();
+  showBanner(refs.currencyError, null);
+
+  const rate = Number(refs.rate.value);
+  if (!Number.isFinite(rate) || rate <= 0) {
+    showBanner(refs.currencyError, 'The exchange rate has to be a number above zero.');
+    refs.rate.focus();
+    return;
+  }
+
+  setBusy(refs.currencySubmit, true, 'Saving…');
+  try {
+    const updated = await updateCurrency(state.profile.id, { exchangeRate: rate });
+    state.profile = updated;
+    setActiveProfile(updated);
+    setMoneyContext({ rate: Number(updated.exchange_rate) });
+    toast('Exchange rate saved.', { type: 'success' });
+    renderRatePreview();
+  } catch (error) {
+    showBanner(refs.currencyError, error.message);
+  } finally {
+    setBusy(refs.currencySubmit, false);
+  }
+}
+
+/* ------------------------------------------------------------ appearance -- */
+
+function renderTheme() {
+  const active = currentTheme();
+  for (const button of refs.themeGroup.querySelectorAll('[data-theme-choice]')) {
+    button.setAttribute('aria-pressed', String(button.dataset.themeChoice === active));
+  }
+  refs.themeNote.textContent = active === 'system'
+    ? `Following your device, which is ${effectiveTheme()} right now.`
+    : `Always ${active}, on this profile.`;
+}
+
+/* ----------------------------------------------------------------- setup -- */
+
+export async function initSettingsPage() {
+  await requireSession();
+  const profile = await requireActiveProfile();
+  state.profile = profile;
+  initMoney(profile);
+  applyProfileTheme(profile.id);
+
+  document.body.prepend(topbar({
+    profile,
+    current: 'settings.html',
+    onSwitchProfile: () => goTo(PICKER_PAGE),
+    onSignOut: signOut,
+  }));
+
+  refs = {
+    profileHeading: document.getElementById('profile-name'),
+    profileList: document.getElementById('profile-list'),
+    profileForm: document.getElementById('profile-form'),
+    profileError: document.getElementById('profile-error'),
+    profileName: document.getElementById('profile-name-input'),
+    profileSubmit: document.getElementById('profile-submit'),
+    optionLists: document.getElementById('option-lists'),
+    categoryList: document.getElementById('category-list'),
+    categoryForm: document.getElementById('category-form'),
+    categoryName: document.getElementById('category-name'),
+    categoryKind: document.getElementById('category-kind'),
+    currencyForm: document.getElementById('currency-form'),
+    currencyError: document.getElementById('currency-error'),
+    rate: document.getElementById('exchange-rate'),
+    currencySubmit: document.getElementById('currency-submit'),
+    preview: document.getElementById('rate-preview'),
+    themeGroup: document.getElementById('theme-group'),
+    themeNote: document.getElementById('theme-note'),
+  };
+
+  refs.profileHeading.textContent = profile.name;
+  refs.rate.value = moneyContext().rate;
+  renderRatePreview();
+  renderTheme();
+
+  const styles = getComputedStyle(document.documentElement);
+  state.palette = Array.from({ length: 8 }, (_, i) =>
+    styles.getPropertyValue(`--avatar-${i + 1}`).trim()).filter(Boolean);
+
+  refs.profileList.append(skeletonList(2, 'skeleton--text'));
+  refs.categoryList.append(skeletonList(2, 'skeleton--text'));
+  refs.optionLists.append(skeletonList(2, 'skeleton--card'));
+
+  try {
+    const [profiles, optionRows, categories] = await Promise.all([
+      listProfiles(),
+      fetchOptions(),
+      fetchCategories(),
+    ]);
+    state.profiles = profiles;
+    state.categories = categories;
+    state.options = {};
+    for (const { kind } of OPTION_KINDS) {
+      state.options[kind] = optionRows.filter((row) => row.kind === kind);
+    }
+  } catch (error) {
+    for (const node of [refs.profileList, refs.categoryList, refs.optionLists]) {
+      clear(node).append(emptyState({
+        title: 'Couldn’t load settings',
+        body: error.message,
+        actionLabel: 'Try again',
+        onAction: () => window.location.reload(),
+      }));
+    }
+    return;
+  }
+
+  clear(refs.optionLists);
+  await renderProfiles();
+  renderOptions();
+  renderCategories();
+  wireControls();
+}
+
+async function fetchOptions() {
+  const { data, error } = await supabase
+    .from('profile_options')
+    .select('id, kind, value')
+    .eq('profile_id', state.profile.id)
+    .order('sort_order', { ascending: true });
+  if (error) throw new Error(describeError(error, 'Couldn’t load your option lists.'));
+  return data ?? [];
+}
+
+async function fetchCategories() {
+  const { data, error } = await supabase
+    .from('finance_categories')
+    .select('id, name, kind, color')
+    .eq('profile_id', state.profile.id)
+    .order('kind', { ascending: true })
+    .order('name', { ascending: true });
+  if (error) throw new Error(describeError(error, 'Couldn’t load your categories.'));
+  return data ?? [];
+}
+
+function wireControls() {
+  refs.profileForm.addEventListener('submit', addProfile);
+  refs.categoryForm.addEventListener('submit', addCategory);
+  refs.currencyForm.addEventListener('submit', saveCurrency);
+  refs.rate.addEventListener('input', renderRatePreview);
+
+  refs.themeGroup.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-theme-choice]');
+    if (!button) return;
+    setTheme(button.dataset.themeChoice, state.profile.id);
+    renderTheme();
+  });
+}

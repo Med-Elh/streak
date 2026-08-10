@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en" data-booting>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Finances · Streak.</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
+    rel="stylesheet" />
+
+  <link rel="stylesheet" href="css/tokens.css" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/components.css" />
+</head>
+
+<body>
+  <main class="page stack-lg">
+    <div class="page-head">
+      <div>
+        <p class="eyebrow">Finances</p>
+        <h1><span id="profile-name"></span>’s month</h1>
+      </div>
+      <div class="month-bar">
+        <label class="label" for="month">Month</label>
+        <input class="input" type="month" id="month" />
+      </div>
+    </div>
+
+    <section class="summary" id="summary" aria-label="Month summary"></section>
+
+    <section class="card" aria-labelledby="add-title">
+      <div class="card__head">
+        <h2 class="card__title" id="add-title">Add an entry</h2>
+      </div>
+
+      <form class="stack" id="entry-form" novalidate>
+        <p class="banner banner--error" id="entry-error" role="alert" hidden></p>
+
+        <div class="entry-form">
+          <div class="field">
+            <label class="label" for="amount">Amount <span class="field__currency" id="amount-currency"></span></label>
+            <input class="input input--num" id="amount" type="number" min="0.01" step="0.01"
+              inputmode="decimal" placeholder="0.00" required />
+          </div>
+
+          <div class="field">
+            <label class="label" for="category">Category</label>
+            <select class="select" id="category" required></select>
+          </div>
+
+          <div class="field">
+            <label class="label" for="date">Date</label>
+            <input class="input" id="date" type="date" required />
+          </div>
+
+          <div class="field">
+            <label class="label" for="note">Note <span class="faint">(optional)</span></label>
+            <input class="input" id="note" maxlength="120" autocomplete="off" />
+          </div>
+
+          <button class="btn btn--primary" type="submit" id="entry-submit">Add entry</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="two-col">
+      <div class="card">
+        <div class="card__head">
+          <h2 class="card__title">Where it went</h2>
+        </div>
+        <div class="chart">
+          <canvas id="category-chart" aria-label="Expenses by category"></canvas>
+          <p class="chart-empty" id="category-empty" hidden></p>
+        </div>
+        <div class="legend" id="category-legend"></div>
+      </div>
+
+      <div class="card">
+        <div class="card__head">
+          <h2 class="card__title">Net by month</h2>
+        </div>
+        <div class="chart">
+          <canvas id="year-chart" aria-label="Net income by month"></canvas>
+          <p class="chart-empty" id="year-empty" hidden></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="stack" aria-labelledby="entries-title">
+      <h2 class="card__title" id="entries-title">This month</h2>
+      <div class="card card--flush" id="entries"></div>
+    </section>
+  </main>
+
+  <dialog class="modal" id="category-modal" aria-labelledby="category-title">
+    <form id="category-form">
+      <div class="modal__head">
+        <h2 class="modal__title" id="category-title">New category</h2>
+        <button class="btn btn--icon" type="button" id="category-close" aria-label="Close">×</button>
+      </div>
+
+      <div class="modal__body stack">
+        <p class="banner banner--error" id="category-error" role="alert" hidden></p>
+
+        <div class="field">
+          <label class="label" for="category-name">Name</label>
+          <input class="input" id="category-name" maxlength="40" required autocomplete="off" />
+        </div>
+
+        <div class="field">
+          <label class="label" for="category-kind">Kind</label>
+          <select class="select" id="category-kind">
+            <option value="expense" selected>Money out</option>
+            <option value="income">Money in</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="modal__foot">
+        <button class="btn btn--secondary" type="button" id="category-cancel">Cancel</button>
+        <button class="btn btn--primary" type="submit" id="category-submit">Add category</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module">
+    import { initFinancesPage } from './js/finances.js';
+    initFinancesPage();
+  </script>
+</body>
+</html>

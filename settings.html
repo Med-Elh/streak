@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en" data-booting>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Settings · Streak.</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
+    rel="stylesheet" />
+
+  <link rel="stylesheet" href="css/tokens.css" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/components.css" />
+</head>
+
+<body>
+  <main class="page stack-lg">
+    <div class="page-head">
+      <div>
+        <p class="eyebrow">Settings</p>
+        <h1><span id="profile-name"></span>’s setup</h1>
+      </div>
+    </div>
+
+    <!-- Profiles -->
+    <section class="card" aria-labelledby="profiles-title">
+      <div class="card__head">
+        <h2 class="card__title" id="profiles-title">Profiles</h2>
+      </div>
+      <p class="muted">Everyone signed in sees every profile. Tap a colour to change it.</p>
+
+      <div class="edit-list" id="profile-list"></div>
+
+      <form class="quick-add" id="profile-form">
+        <input class="input quick-add__title" id="profile-name-input" maxlength="40"
+          placeholder="Add a profile" autocomplete="off" aria-label="New profile name" />
+        <button class="btn btn--primary" type="submit" id="profile-submit">Add profile</button>
+      </form>
+      <p class="banner banner--error" id="profile-error" role="alert" hidden></p>
+    </section>
+
+    <!-- Option lists -->
+    <section class="card" aria-labelledby="options-title">
+      <div class="card__head">
+        <h2 class="card__title" id="options-title">Trading options</h2>
+      </div>
+      <p class="muted">
+        The dropdowns on the trading form. Adding your first one to a list copies
+        the defaults across, so nothing disappears from an old trade.
+      </p>
+      <div class="settings-grid" id="option-lists"></div>
+    </section>
+
+    <!-- Finance categories -->
+    <section class="card" aria-labelledby="categories-title">
+      <div class="card__head">
+        <h2 class="card__title" id="categories-title">Finance categories</h2>
+      </div>
+
+      <div class="edit-list" id="category-list"></div>
+
+      <form class="quick-add" id="category-form">
+        <input class="input quick-add__title" id="category-name" maxlength="40"
+          placeholder="Add a category" autocomplete="off" aria-label="New category name" />
+        <select class="select" id="category-kind" aria-label="Category kind">
+          <option value="expense" selected>Money out</option>
+          <option value="income">Money in</option>
+        </select>
+        <button class="btn btn--secondary" type="submit">Add</button>
+      </form>
+    </section>
+
+    <!-- Currency -->
+    <section class="card" aria-labelledby="currency-title">
+      <div class="card__head">
+        <h2 class="card__title" id="currency-title">Currency</h2>
+      </div>
+
+      <form class="stack" id="currency-form" novalidate>
+        <p class="banner banner--error" id="currency-error" role="alert" hidden></p>
+        <p class="muted">
+          Trades are entered and stored in <strong>USD</strong>. Finances are entered
+          and stored in <strong>MAD</strong>. Neither is convertible on the way in —
+          this rate only changes what the top-bar toggle shows you.
+        </p>
+
+        <div class="entry-form">
+          <div class="field">
+            <label class="label" for="exchange-rate">MAD per USD</label>
+            <input class="input input--num" id="exchange-rate" type="number" min="0.0001"
+              step="0.0001" inputmode="decimal" required />
+            <span class="hint">How many dirhams make one dollar.</span>
+          </div>
+        </div>
+
+        <p class="hint num" id="rate-preview"></p>
+
+        <div class="row row-end">
+          <button class="btn btn--primary" type="submit" id="currency-submit">Save currency</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Appearance -->
+    <section class="card" aria-labelledby="appearance-title">
+      <div class="card__head">
+        <h2 class="card__title" id="appearance-title">Appearance</h2>
+      </div>
+
+      <div class="row row-wrap">
+        <div class="segmented" role="group" aria-label="Theme" id="theme-group">
+          <button type="button" data-theme-choice="light" aria-pressed="false">Light</button>
+          <button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button>
+          <button type="button" data-theme-choice="system" aria-pressed="false">System</button>
+        </div>
+        <span class="hint" id="theme-note"></span>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { initSettingsPage } from './js/settings.js';
+    initSettingsPage();
+  </script>
+</body>
+</html>

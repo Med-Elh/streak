@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en" data-booting>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Habits · Streak.</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
+    rel="stylesheet" />
+
+  <link rel="stylesheet" href="css/tokens.css" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/components.css" />
+</head>
+
+<body>
+  <main class="page stack-lg">
+    <div class="page-head">
+      <div>
+        <p class="eyebrow">Today</p>
+        <h1>Keep the streak, <span id="profile-name"></span></h1>
+      </div>
+      <button class="btn btn--primary" type="button" id="add-habit">Add habit</button>
+    </div>
+
+    <section class="stack" aria-labelledby="today-title">
+      <h2 class="sr-only" id="today-title">Today’s habits</h2>
+      <div class="stack-sm" id="today-list"></div>
+    </section>
+
+    <section class="card" aria-labelledby="board-title">
+      <div class="card__head">
+        <h2 class="card__title" id="board-title">Competition board</h2>
+        <span class="eyebrow">Current streak</span>
+      </div>
+      <div id="board"></div>
+    </section>
+
+    <section class="stack" aria-labelledby="chart-title">
+      <div class="row row-between row-wrap">
+        <h2 class="card__title" id="chart-title">Completion rate</h2>
+        <div class="segmented" role="group" aria-label="Chart mode">
+          <button type="button" id="mode-solo" aria-pressed="true">Solo</button>
+          <button type="button" id="mode-comparison" aria-pressed="false">Comparison</button>
+        </div>
+      </div>
+
+      <div class="filter-bar">
+        <div class="field">
+          <label class="label" for="filter-profile">Profile</label>
+          <select class="select" id="filter-profile"></select>
+        </div>
+        <div class="field">
+          <label class="label" for="filter-habit">Habit</label>
+          <select class="select" id="filter-habit"></select>
+        </div>
+        <div class="field">
+          <label class="label" for="filter-range">Range</label>
+          <select class="select" id="filter-range">
+            <option value="7">Last 7 days</option>
+            <option value="30" selected>Last 30 days</option>
+            <option value="90">Last 90 days</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="chart chart--tall">
+          <canvas id="completion-chart" aria-label="Completion rate over time"></canvas>
+          <p class="chart-empty" id="chart-empty" hidden></p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <dialog class="modal" id="habit-modal" aria-labelledby="habit-title">
+    <form id="habit-form">
+      <div class="modal__head">
+        <h2 class="modal__title" id="habit-title">Add a habit</h2>
+        <button class="btn btn--icon" type="button" id="habit-close" aria-label="Close">×</button>
+      </div>
+
+      <div class="modal__body stack">
+        <p class="banner banner--error" id="habit-error" role="alert" hidden></p>
+
+        <div class="field">
+          <label class="label" for="habit-name">Habit</label>
+          <input class="input" id="habit-name" maxlength="60" required autocomplete="off" />
+        </div>
+
+        <div class="field">
+          <label class="label" for="habit-icon">Icon <span class="faint">(optional)</span></label>
+          <input class="input" id="habit-icon" maxlength="2" placeholder="📚" autocomplete="off" />
+        </div>
+
+        <div class="field">
+          <label class="label" for="habit-target">Target</label>
+          <select class="select" id="habit-target">
+            <option value="7" selected>Every day</option>
+            <option value="6">6× a week</option>
+            <option value="5">5× a week</option>
+            <option value="4">4× a week</option>
+            <option value="3">3× a week</option>
+            <option value="2">2× a week</option>
+            <option value="1">Once a week</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="modal__foot">
+        <button class="btn btn--secondary" type="button" id="habit-cancel">Cancel</button>
+        <button class="btn btn--primary" type="submit" id="habit-submit">Add habit</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module">
+    import { initHabitsPage } from './js/habits.js';
+    initHabitsPage();
+  </script>
+</body>
+</html>

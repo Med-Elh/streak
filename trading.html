@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en" data-booting>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Trading · Streak.</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
+    rel="stylesheet" />
+
+  <link rel="stylesheet" href="css/tokens.css" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/components.css" />
+</head>
+
+<body>
+  <main class="page stack-lg">
+    <div class="page-head">
+      <div>
+        <p class="eyebrow">Trading</p>
+        <h1><span id="profile-name"></span>’s journal</h1>
+      </div>
+    </div>
+
+    <!-- Log form + pre-trade rules -->
+    <section class="log-layout" aria-labelledby="log-title">
+      <div class="card">
+        <div class="card__head">
+          <h2 class="card__title" id="log-title">Log a trade</h2>
+          <span class="chip" id="outcome">Set by P&amp;L</span>
+        </div>
+
+        <form class="stack" id="trade-form" novalidate>
+          <p class="banner banner--error" id="trade-error" role="alert" hidden></p>
+
+          <div class="form-grid">
+            <div class="field">
+              <label class="label" for="date">Date</label>
+              <input class="input" type="date" id="date" required />
+            </div>
+
+            <div class="field">
+              <label class="label" for="instrument">Instrument</label>
+              <select class="select" id="instrument" required></select>
+            </div>
+
+            <div class="field">
+              <label class="label" for="direction">Direction</label>
+              <select class="select" id="direction"></select>
+            </div>
+
+            <div class="field">
+              <label class="label" for="session">Session</label>
+              <select class="select" id="session"></select>
+            </div>
+
+            <div class="field">
+              <label class="label" for="setup">Setup</label>
+              <select class="select" id="setup"></select>
+            </div>
+
+            <div class="field">
+              <label class="label" for="emotion">Emotion</label>
+              <select class="select" id="emotion"></select>
+            </div>
+
+            <div class="field">
+              <label class="label" for="entry">Entry</label>
+              <input class="input input--num" type="number" step="any" inputmode="decimal" id="entry" />
+            </div>
+
+            <div class="field">
+              <label class="label" for="exit">Exit</label>
+              <input class="input input--num" type="number" step="any" inputmode="decimal" id="exit" />
+            </div>
+
+            <div class="field">
+              <label class="label" for="stop">Stop</label>
+              <input class="input input--num" type="number" step="any" inputmode="decimal" id="stop" />
+            </div>
+
+            <div class="field">
+              <label class="label" for="target">Target</label>
+              <input class="input input--num" type="number" step="any" inputmode="decimal" id="target" />
+            </div>
+
+            <div class="field">
+              <label class="label" for="size">Size</label>
+              <input class="input input--num" type="number" step="any" inputmode="decimal" id="size" />
+            </div>
+
+            <div class="field field--computed">
+              <label class="label" for="rr">R:R</label>
+              <input class="input input--num" type="number" step="any" inputmode="decimal" id="rr" />
+            </div>
+
+            <div class="field field--computed">
+              <label class="label" for="pnl">P&amp;L <span class="field__currency" id="pnl-currency"></span></label>
+              <input class="input input--num" type="number" step="any" inputmode="decimal" id="pnl" />
+            </div>
+
+            <div class="field field--wide">
+              <label class="label" for="notes">Notes</label>
+              <textarea class="textarea" id="notes" maxlength="2000"
+                placeholder="What you saw, what you did, what you'd repeat."></textarea>
+            </div>
+
+            <div class="field field--wide">
+              <label class="label" for="screenshot">Screenshot link <span class="faint">(optional)</span></label>
+              <input class="input" type="url" id="screenshot" placeholder="https://" autocomplete="off" />
+            </div>
+          </div>
+
+          <div class="row row-wrap">
+            <button class="btn btn--ghost btn--sm" type="button" id="recalc" hidden>
+              Recalculate R:R and P&amp;L
+            </button>
+            <div class="spacer"></div>
+            <button class="btn btn--secondary" type="button" id="trade-reset">Clear</button>
+            <button class="btn btn--primary" type="submit" id="trade-submit">Log trade</button>
+          </div>
+        </form>
+      </div>
+
+      <aside class="card rules-panel" aria-labelledby="rules-title">
+        <div class="card__head">
+          <h2 class="card__title" id="rules-title">Before you click</h2>
+          <span class="chip" id="rule-count">—</span>
+        </div>
+
+        <div id="rules-list"></div>
+
+        <form class="row rule-form" id="rule-form">
+          <input class="input" id="rule-input" maxlength="200" placeholder="Add a rule" autocomplete="off"
+            aria-label="New rule" />
+          <button class="btn btn--secondary btn--sm" type="submit">Add</button>
+        </form>
+      </aside>
+    </section>
+
+    <!-- Performance: the strip, then the curve and the calendar -->
+    <section class="stack" aria-labelledby="performance-title">
+      <h2 class="card__title" id="performance-title">Performance</h2>
+
+      <div class="stat-strip" id="stats" aria-label="Performance summary"></div>
+
+      <div class="panel-pair">
+        <div class="panel">
+          <div class="panel__head">
+            <span class="panel__label">Cumulative P&amp;L</span>
+            <span class="panel__total" id="equity-total">—</span>
+          </div>
+          <div class="chart">
+            <canvas id="equity-chart" aria-label="Cumulative profit and loss over time"></canvas>
+            <p class="chart-empty" id="equity-empty" hidden></p>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="calendar__nav">
+            <button class="calendar__arrow" type="button" id="cal-prev" aria-label="Previous month">‹</button>
+            <span class="calendar__month" id="cal-month" aria-live="polite"></span>
+            <button class="calendar__arrow" type="button" id="cal-next" aria-label="Next month">›</button>
+          </div>
+          <div class="calendar__grid" id="cal-grid"></div>
+          <div class="calendar__foot">
+            <span class="panel__label">This month</span>
+            <span class="num num--muted" id="cal-summary"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Filters + table -->
+    <section class="stack" aria-labelledby="table-title">
+      <div class="row row-between row-wrap">
+        <h2 class="card__title" id="table-title">Trades</h2>
+        <button class="btn btn--ghost btn--sm" type="button" id="clear-filters">Clear filters</button>
+      </div>
+
+      <div class="filter-bar" id="filter-bar">
+        <div class="field">
+          <label class="label" for="filter-instrument">Instrument</label>
+          <select class="select" id="filter-instrument" data-filter="instrument"></select>
+        </div>
+        <div class="field">
+          <label class="label" for="filter-direction">Direction</label>
+          <select class="select" id="filter-direction" data-filter="direction"></select>
+        </div>
+        <div class="field">
+          <label class="label" for="filter-session">Session</label>
+          <select class="select" id="filter-session" data-filter="session"></select>
+        </div>
+        <div class="field">
+          <label class="label" for="filter-setup">Setup</label>
+          <select class="select" id="filter-setup" data-filter="setup"></select>
+        </div>
+        <div class="field">
+          <label class="label" for="filter-emotion">Emotion</label>
+          <select class="select" id="filter-emotion" data-filter="emotion"></select>
+        </div>
+        <div class="field">
+          <label class="label" for="filter-outcome">Outcome</label>
+          <select class="select" id="filter-outcome" data-filter="outcome"></select>
+        </div>
+      </div>
+
+      <div class="card card--flush" id="trade-table"></div>
+    </section>
+
+    <!-- Breakdowns -->
+    <section class="stack" aria-labelledby="charts-title">
+      <h2 class="card__title" id="charts-title">Breakdowns</h2>
+
+      <div class="card">
+        <div class="card__head">
+          <h3 class="card__title">P&amp;L</h3>
+          <div class="segmented" role="group" aria-label="Group profit and loss by">
+            <button type="button" data-grouping="day" aria-pressed="false">Day</button>
+            <button type="button" data-grouping="month" aria-pressed="true">Month</button>
+            <button type="button" data-grouping="year" aria-pressed="false">Year</button>
+          </div>
+        </div>
+        <div class="chart">
+          <canvas id="pnl-chart" aria-label="Profit and loss by period"></canvas>
+          <p class="chart-empty" id="pnl-empty" hidden></p>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div class="card">
+          <div class="card__head">
+            <h3 class="card__title">Win rate by setup</h3>
+          </div>
+          <div class="chart">
+            <canvas id="setup-chart" aria-label="Win rate by setup"></canvas>
+            <p class="chart-empty" id="setup-empty" hidden></p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card__head">
+            <h3 class="card__title">Win rate by session</h3>
+          </div>
+          <div class="chart">
+            <canvas id="session-chart" aria-label="Win rate by session"></canvas>
+            <p class="chart-empty" id="session-empty" hidden></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card__head">
+          <h3 class="card__title">P&amp;L by emotion</h3>
+          <span class="eyebrow">What each mood costs</span>
+        </div>
+        <div class="chart">
+          <canvas id="emotion-chart" aria-label="Profit and loss by emotion"></canvas>
+          <p class="chart-empty" id="emotion-empty" hidden></p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { initTradingPage } from './js/trading.js';
+    initTradingPage();
+  </script>
+</body>
+</html>

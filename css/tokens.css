@@ -1,0 +1,297 @@
+/* ==========================================================================
+   Streak. — design tokens
+   The only file in the project allowed to contain a raw colour value.
+   Themes flip via [data-theme] on <html>; with no attribute we follow the OS.
+   ========================================================================== */
+
+:root {
+  /* ---------- type ---------------------------------------------------- */
+  /* Display carries the personality (the wordmark, the streak count, page
+     titles). Body is quiet and legible. Mono is the number face — every
+     figure in the app is set in it so columns line up. */
+  --font-display: 'Bricolage Grotesque', 'Segoe UI Variable Display', system-ui, sans-serif;
+  --font-body: 'Public Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', 'Consolas', monospace;
+
+  --text-2xs: 0.6875rem;  /* 11 — table micro-labels */
+  --text-xs:  0.75rem;    /* 12 */
+  --text-sm:  0.8125rem;  /* 13 */
+  --text-base:0.9375rem;  /* 15 — body */
+  --text-md:  1.0625rem;  /* 17 */
+  --text-lg:  1.375rem;   /* 22 */
+  --text-xl:  1.75rem;    /* 28 */
+  --text-2xl: 2.25rem;    /* 36 */
+  --text-3xl: 3rem;       /* 48 */
+  --text-4xl: 4.25rem;    /* 68 — the streak counter, nothing else */
+
+  --leading-tight: 1.1;
+  --leading-snug: 1.35;
+  --leading-normal: 1.55;
+
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.06em;
+  --tracking-caps: 0.09em;
+
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* ---------- space ---------------------------------------------------- */
+  --space-1: 0.25rem;   /* 4  */
+  --space-2: 0.5rem;    /* 8  */
+  --space-3: 0.75rem;   /* 12 */
+  --space-4: 1rem;      /* 16 */
+  --space-5: 1.5rem;    /* 24 */
+  --space-6: 2rem;      /* 32 */
+  --space-7: 2.5rem;    /* 40 */
+  --space-8: 3.5rem;    /* 56 */
+  --space-9: 5rem;      /* 80 */
+
+  /* ---------- shape ---------------------------------------------------- */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 26px;
+  --radius-pill: 999px;
+
+  --border-width: 1px;
+
+  /* ---------- motion --------------------------------------------------- */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --duration-fast: 110ms;
+  --duration-base: 180ms;
+  --duration-slow: 300ms;
+
+  /* ---------- layout --------------------------------------------------- */
+  --page-max: 1180px;
+  --page-gutter: var(--space-5);
+  --topbar-height: 60px;
+
+  --z-base: 1;
+  --z-sticky: 100;
+  --z-modal: 400;
+  --z-toast: 500;
+
+  /* ======================================================================
+     LIGHT THEME (default)
+     Cool paper, not cream. Ink is blue-black, never pure #000.
+     ====================================================================== */
+
+  /* surfaces, back to front */
+  --bg:            #eef0f4;
+  --surface:       #ffffff;
+  --surface-2:     #f5f6f9;
+  --surface-sunk:  #e5e8ee;
+  --surface-inverse: #14161d;
+
+  /* lines */
+  --border:        #dcdfe7;
+  --border-strong: #c3c8d4;
+  --border-subtle: #e8eaf0;
+
+  /* text */
+  --text:          #14161d;
+  --text-muted:    #565d6e;
+  --text-faint:    #858c9c;
+  --text-inverse:  #f6f7fa;
+  --text-on-accent:#ffffff;
+
+  /* accent — ember. The streak is a flame; the app is named after it, so the
+     one saturated colour in the chrome belongs to it. Green/red stay reserved
+     for money so they never read as "brand". */
+  --accent:        #d9530b;
+  --accent-hover:  #bf480a;
+  --accent-active: #a43e08;
+  --accent-soft:   #fdece1;
+  --accent-rgb:    217 83 11;
+
+  --flame-from:    #f7a13b;
+  --flame-to:      #d9530b;
+
+  /* data / money */
+  --positive:      #0b7d55;
+  --positive-soft: #e2f4ec;
+  --positive-rgb:  11 125 85;
+  --negative:      #c33a34;
+  --negative-soft: #fce9e8;
+  --negative-rgb:  195 58 52;
+  --neutral:       #6b7280;
+  --neutral-soft:  #eceef2;
+
+  /* status */
+  --warning:       #a96a00;
+  --warning-soft:  #fdf1dc;
+  --info:          #2b5fd9;
+  --info-soft:     #e6ecfd;
+
+  /* interaction */
+  --focus:         #1f5fe0;
+  --overlay:       rgb(18 20 27 / 0.42);
+  --hover-wash:    rgb(18 20 27 / 0.04);
+  --press-wash:    rgb(18 20 27 / 0.08);
+  --track:         #d8dbe4;
+
+  --shadow-sm: 0 1px 2px rgb(18 20 27 / 0.06), 0 1px 1px rgb(18 20 27 / 0.04);
+  --shadow-md: 0 4px 12px rgb(18 20 27 / 0.08), 0 1px 3px rgb(18 20 27 / 0.05);
+  --shadow-lg: 0 18px 44px rgb(18 20 27 / 0.16), 0 2px 8px rgb(18 20 27 / 0.06);
+  --shadow-accent: 0 6px 20px rgb(var(--accent-rgb) / 0.28);
+
+  /* Chart series — assigned in charts.js, in this fixed order, never cycled.
+     Six slots, each a different hue family; a seventh category folds into
+     "Other" rather than inventing a colour. Validated for every pair, not just
+     neighbours: lightness band, chroma floor, protan/deutan/tritan separation,
+     and 3:1 against the chart surface. Dark is its own set of steps, not a
+     lightened flip of these. Re-run the checker before changing any of them. */
+  --series-1: #d9530b;  /* ember  */
+  --series-2: #057aa5;  /* teal   */
+  --series-3: #4d9965;  /* green  */
+  --series-4: #a282cb;  /* lilac  */
+  --series-5: #604183;  /* violet */
+  --series-6: #883d22;  /* brick  */
+  --series-other: #6b7280;
+}
+
+/* ======================================================================
+   DARK THEME
+   Deep indigo-slate. Not near-black, not a grey wash — it has a hue.
+   ====================================================================== */
+:root[data-theme='dark'] {
+  --bg:            #0e1017;
+  --surface:       #171a23;
+  --surface-2:     #1e2230;
+  --surface-sunk:  #0a0c12;
+  --surface-inverse: #f2f4f8;
+
+  --border:        #2a2f3d;
+  --border-strong: #3b4254;
+  --border-subtle: #21262f;
+
+  --text:          #e9ebf2;
+  --text-muted:    #9aa2b6;
+  --text-faint:    #6d768c;
+  --text-inverse:  #14161d;
+  --text-on-accent:#1a0d04;
+
+  --accent:        #ff8a3d;
+  --accent-hover:  #ff9d5c;
+  --accent-active: #f0762a;
+  --accent-soft:   #2c1b10;
+  --accent-rgb:    255 138 61;
+
+  --flame-from:    #ffc36b;
+  --flame-to:      #ff6a2b;
+
+  --positive:      #3ed69a;
+  --positive-soft: #122b23;
+  --positive-rgb:  62 214 154;
+  --negative:      #ff6b66;
+  --negative-soft: #2e1717;
+  --negative-rgb:  255 107 102;
+  --neutral:       #8b93a6;
+  --neutral-soft:  #232735;
+
+  --warning:       #e8b04b;
+  --warning-soft:  #2b2213;
+  --info:          #6f9bff;
+  --info-soft:     #151d33;
+
+  --focus:         #7aa5ff;
+  --overlay:       rgb(4 5 8 / 0.66);
+  --hover-wash:    rgb(255 255 255 / 0.05);
+  --press-wash:    rgb(255 255 255 / 0.09);
+  --track:         #2f3546;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.5);
+  --shadow-md: 0 6px 18px rgb(0 0 0 / 0.45);
+  --shadow-lg: 0 24px 56px rgb(0 0 0 / 0.6);
+  --shadow-accent: 0 6px 24px rgb(var(--accent-rgb) / 0.3);
+
+  --series-1: #ca6d2b;  /* ember  */
+  --series-2: #1276a4;  /* teal   */
+  --series-3: #3ea17a;  /* green  */
+  --series-4: #9284ce;  /* lilac  */
+  --series-5: #6b4fd1;  /* violet */
+  --series-6: #9e506f;  /* mauve  */
+  --series-other: #8b93a6;
+}
+
+/* No explicit choice yet (pre-login, or "System") — follow the OS.
+   Duplicated rather than @import-ed so a theme swap is one attribute. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']):not([data-theme='dark']) {
+    --bg:            #0e1017;
+    --surface:       #171a23;
+    --surface-2:     #1e2230;
+    --surface-sunk:  #0a0c12;
+    --surface-inverse: #f2f4f8;
+
+    --border:        #2a2f3d;
+    --border-strong: #3b4254;
+    --border-subtle: #21262f;
+
+    --text:          #e9ebf2;
+    --text-muted:    #9aa2b6;
+    --text-faint:    #6d768c;
+    --text-inverse:  #14161d;
+    --text-on-accent:#1a0d04;
+
+    --accent:        #ff8a3d;
+    --accent-hover:  #ff9d5c;
+    --accent-active: #f0762a;
+    --accent-soft:   #2c1b10;
+    --accent-rgb:    255 138 61;
+
+    --flame-from:    #ffc36b;
+    --flame-to:      #ff6a2b;
+
+    --positive:      #3ed69a;
+    --positive-soft: #122b23;
+    --positive-rgb:  62 214 154;
+    --negative:      #ff6b66;
+    --negative-soft: #2e1717;
+    --negative-rgb:  255 107 102;
+    --neutral:       #8b93a6;
+    --neutral-soft:  #232735;
+
+    --warning:       #e8b04b;
+    --warning-soft:  #2b2213;
+    --info:          #6f9bff;
+    --info-soft:     #151d33;
+
+    --focus:         #7aa5ff;
+    --overlay:       rgb(4 5 8 / 0.66);
+    --hover-wash:    rgb(255 255 255 / 0.05);
+    --press-wash:    rgb(255 255 255 / 0.09);
+    --track:         #2f3546;
+
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.5);
+    --shadow-md: 0 6px 18px rgb(0 0 0 / 0.45);
+    --shadow-lg: 0 24px 56px rgb(0 0 0 / 0.6);
+    --shadow-accent: 0 6px 24px rgb(var(--accent-rgb) / 0.3);
+
+    --series-1: #ca6d2b;  /* ember  */
+    --series-2: #1276a4;  /* teal   */
+    --series-3: #3ea17a;  /* green  */
+    --series-4: #9284ce;  /* lilac  */
+    --series-5: #6b4fd1;  /* violet */
+    --series-6: #9e506f;  /* mauve  */
+    --series-other: #8b93a6;
+  }
+}
+
+/* Profile avatar palette. Offered in the "add profile" swatch picker and
+   stored per profile as a hex string, so these are values not variables. */
+:root {
+  --avatar-1: #d9530b;
+  --avatar-2: #2b5fd9;
+  --avatar-3: #0b7d55;
+  --avatar-4: #8b5cf6;
+  --avatar-5: #0e8ea3;
+  --avatar-6: #c2417f;
+  --avatar-7: #b8860b;
+  --avatar-8: #4a5568;
+}

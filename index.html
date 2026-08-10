@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en" data-booting>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="description" content="Streak. — habits, finances and a trading journal in one place." />
+  <title>Sign in · Streak.</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
+    rel="stylesheet" />
+
+  <link rel="stylesheet" href="css/tokens.css" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/components.css" />
+</head>
+
+<body class="auth-page">
+  <main class="auth-card">
+    <div class="auth-card__head">
+      <span class="wordmark wordmark--lg"><b>Streak</b><i>.</i></span>
+      <h1>Welcome back</h1>
+      <p class="muted">Sign in to pick up where you left off.</p>
+    </div>
+
+    <form class="auth-form" id="signin-form" novalidate>
+      <p class="banner banner--error" id="form-error" role="alert" hidden></p>
+
+      <div class="field">
+        <label class="label" for="email">Email</label>
+        <input
+          class="input"
+          id="email"
+          name="email"
+          type="email"
+          inputmode="email"
+          autocomplete="username"
+          autocapitalize="off"
+          spellcheck="false"
+          required
+          autofocus />
+      </div>
+
+      <div class="field">
+        <label class="label" for="password">Password</label>
+        <input
+          class="input"
+          id="password"
+          name="password"
+          type="password"
+          autocomplete="current-password"
+          required />
+      </div>
+
+      <button class="btn btn--primary btn--lg btn--block" type="submit" id="submit">
+        Sign in
+      </button>
+    </form>
+
+    <p class="auth-note">One shared account. You’ll pick your profile next.</p>
+  </main>
+
+  <script type="module">
+    import { redirectIfSignedIn, signIn, goTo, PICKER_PAGE } from './js/auth.js';
+    import { showBanner, setBusy } from './js/ui.js';
+
+    // Already signed in? Straight to the picker; the form never renders.
+    await redirectIfSignedIn();
+
+    const form = document.getElementById('signin-form');
+    const errorBanner = document.getElementById('form-error');
+    const submit = document.getElementById('submit');
+    const email = document.getElementById('email');
+    const password = document.getElementById('password');
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      showBanner(errorBanner, null);
+
+      if (!email.value.trim()) {
+        showBanner(errorBanner, 'Enter the email you sign in with.');
+        email.focus();
+        return;
+      }
+      if (!password.value) {
+        showBanner(errorBanner, 'Enter your password.');
+        password.focus();
+        return;
+      }
+
+      setBusy(submit, true, 'Signing in…');
+      try {
+        await signIn(email.value, password.value);
+        goTo(PICKER_PAGE);
+      } catch (error) {
+        setBusy(submit, false);
+        showBanner(errorBanner, error.message);
+        password.select();
+      }
+    });
+
+    // Clear the error as soon as they start fixing it.
+    for (const input of [email, password]) {
+      input.addEventListener('input', () => showBanner(errorBanner, null), { once: false });
+    }
+  </script>
+</body>
+</html>
