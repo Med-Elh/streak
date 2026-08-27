@@ -130,6 +130,19 @@ th.num {
 .page-head h1 { font-size: var(--text-2xl); }
 .page-head p { color: var(--text-muted); }
 
+/* The greeting under the heading. Soft, unhurried, and deliberately without
+   animation — it should read like a note left on the counter, not an event. */
+.greeting {
+  margin-top: var(--space-2);
+  max-width: 52ch;
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  font-weight: var(--weight-normal);
+  line-height: var(--leading-snug);
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
 .stack { display: flex; flex-direction: column; gap: var(--space-4); }
 .stack-sm { display: flex; flex-direction: column; gap: var(--space-2); }
 .stack-lg { display: flex; flex-direction: column; gap: var(--space-6); }

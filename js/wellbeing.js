@@ -7,15 +7,15 @@
  * you don't.
  */
 
-import { supabase, describeError } from './supabase.js?v=8';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=8';
-import { requireActiveProfile } from './profiles.js?v=8';
+import { supabase, describeError } from './supabase.js?v=10';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=10';
+import { requireActiveProfile } from './profiles.js?v=10';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy,
   todayISO, formatDate, applyProfileTheme, beat,
-} from './ui.js?v=8';
-import { FEELINGS, INTENSITY_LABELS, feeling } from './constants.js?v=8';
-import { countBarChart } from './charts.js?v=8';
+} from './ui.js?v=10';
+import { FEELINGS, INTENSITY_LABELS, feeling } from './constants.js?v=10';
+import { countBarChart } from './charts.js?v=10';
 
 const LAST_REFLECTION_KEY = 'streak.last_reflection';
 /** Four bands, so a week reads as a shape rather than 168 cells. */
@@ -25,6 +25,8 @@ const BANDS = [
   { key: 'evening', label: 'Evening', from: 17, to: 22 },
   { key: 'night', label: 'Night', from: 22, to: 5 },
 ];
+
+import { mountGreeting } from './greetings.js?v=10';
 
 const state = {
   profile: null,
@@ -353,6 +355,7 @@ export async function initWellbeingPage() {
   const profile = await requireActiveProfile();
   state.profile = profile;
   applyProfileTheme(profile.id);
+  mountGreeting(profile);
 
   document.body.prepend(topbar({
     profile,

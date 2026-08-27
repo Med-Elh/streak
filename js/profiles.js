@@ -11,8 +11,8 @@
  * is dropped and the picker takes over. Supabase stays the source of truth.
  */
 
-import { supabase, describeError } from './supabase.js?v=8';
-import { goTo, PICKER_PAGE } from './auth.js?v=8';
+import { supabase, describeError } from './supabase.js?v=10';
+import { goTo, PICKER_PAGE } from './auth.js?v=10';
 
 const ACTIVE_KEY = 'streak.active_profile';
 
@@ -24,7 +24,7 @@ let activeProfile = null;
 export async function listProfiles() {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, name, avatar_color, exchange_rate, created_at')
+    .select('id, name, avatar_color, exchange_rate, greeting_style, created_at')
     .order('created_at', { ascending: true });
 
   if (error) throw new Error(describeError(error, 'Couldn’t load profiles.'));
@@ -34,7 +34,7 @@ export async function listProfiles() {
 export async function getProfile(id) {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, name, avatar_color, exchange_rate, created_at')
+    .select('id, name, avatar_color, exchange_rate, greeting_style, created_at')
     .eq('id', id)
     .maybeSingle();
 
@@ -48,7 +48,7 @@ export async function createProfile({ name, avatarColor }) {
   const { data, error } = await supabase
     .from('profiles')
     .insert({ name: name.trim(), avatar_color: avatarColor })
-    .select('id, name, avatar_color, exchange_rate, created_at')
+    .select('id, name, avatar_color, exchange_rate, greeting_style, created_at')
     .single();
 
   if (error) {
@@ -86,12 +86,22 @@ export async function updateCurrency(id, { exchangeRate }) {
     .from('profiles')
     .update({ exchange_rate: exchangeRate })
     .eq('id', id)
-    .select('id, name, avatar_color, exchange_rate, created_at')
+    .select('id, name, avatar_color, exchange_rate, greeting_style, created_at')
     .single();
 
   if (error) throw new Error(describeError(error, 'Couldn’t save the currency settings.'));
   if (activeProfile?.id === id) Object.assign(activeProfile, data);
   return data;
+}
+
+/** Which voice the app uses for this person. */
+export async function updateGreetingStyle(id, greetingStyle) {
+  const { error } = await supabase
+    .from('profiles')
+    .update({ greeting_style: greetingStyle })
+    .eq('id', id);
+  if (error) throw new Error(describeError(error, 'Couldn’t save the greeting style.'));
+  if (activeProfile?.id === id) activeProfile.greeting_style = greetingStyle;
 }
 
 /** Cascades to that profile's habits, finances and trades. */

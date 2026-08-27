@@ -7,19 +7,24 @@
  * near-identical ones.
  */
 
-import { supabase, describeError } from './supabase.js?v=8';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=8';
+import { supabase, describeError } from './supabase.js?v=10';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=10';
 import {
   requireActiveProfile, listProfiles, createProfile, renameProfile,
-  recolorProfile, deleteProfile, updateCurrency, setActiveProfile,
-} from './profiles.js?v=8';
+  recolorProfile, deleteProfile, updateCurrency, setActiveProfile, updateGreetingStyle,
+} from './profiles.js?v=10';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
   initials, initMoney, setMoneyContext, moneyContext, formatMoney, useCurrency, swatchPicker,
   setTheme, effectiveTheme, currentTheme, applyProfileTheme,
-} from './ui.js?v=8';
-import { OPTION_KINDS, seedFor } from './constants.js?v=8';
-import { categoryColor, seriesColor } from './charts.js?v=8';
+} from './ui.js?v=10';
+import { OPTION_KINDS, seedFor } from './constants.js?v=10';
+import { categoryColor, seriesColor } from './charts.js?v=10';
+
+import {
+  mountGreeting, sessionKey, listGreetings, createGreeting, updateGreeting,
+  deleteGreeting, GREETING_STYLES, PERIODS,
+} from './greetings.js?v=10';
 
 const state = {
   profile: null,
@@ -28,6 +33,8 @@ const state = {
   categories: [],
   palette: [],        // the six chart slots — categories are charted
   avatarPalette: [],  // the eight avatar colours — profiles are not
+  greetings: [],
+  greetingStyle: 'neutral',
 };
 
 let refs = {};
@@ -124,9 +131,97 @@ async function renderProfiles() {
       onDelete: () => removeProfile(profile),
     });
 
+    // How the app talks to this person, set per profile so two people sharing
+    // one login don't have to share one tone of voice.
+    const style = el('select', { class: 'select select--inline', 'aria-label': `Greeting style for ${profile.name}` });
+    for (const option of GREETING_STYLES) {
+      style.append(el('option', { value: option.value, text: option.label }));
+    }
+    style.value = profile.greeting_style === 'warm' ? 'warm' : 'neutral';
+    style.addEventListener('change', () => saveGreetingStyle(profile, style));
+    row.append(style);
+
     if (isActive) row.append(el('span', { class: 'chip chip--accent', text: 'Active' }));
     refs.profileList.append(row);
   }
+}
+
+async function saveGreetingStyle(profile, select) {
+  await guard('Couldn’t change the greeting style.', async () => {
+    await updateGreetingStyle(profile.id, select.value);
+    profile.greeting_style = select.value;
+    // The line for this session was picked under the old style.
+    for (const period of ['morning', 'afternoon', 'evening']) {
+      sessionStorage.removeItem(sessionKey(profile.id, period));
+    }
+    toast('Greeting style saved.', { type: 'success', duration: 2000 });
+    return true;
+  });
+}
+
+/* -------------------------------------------------------------- greetings -- */
+
+function renderGreetings() {
+  clear(refs.greetingList);
+
+  const rows = state.greetings.filter((g) => g.style === state.greetingStyle);
+  if (!rows.length) {
+    refs.greetingList.append(emptyState({
+      title: 'No lines for this style',
+      body: 'Add one below. Use {name} where the profile name should go.',
+    }));
+    return;
+  }
+
+  for (const greeting of rows) {
+    const row = listRow({
+      label: greeting.body,
+      onRename: (next) => guard('Couldn’t save that greeting.', async () => {
+        await updateGreeting(greeting.id, { body: next });
+        greeting.body = next;
+        toast('Greeting saved.', { type: 'success', duration: 2000 });
+        return true;
+      }),
+      onDelete: () => removeGreeting(greeting),
+    });
+    row.append(el('span', {
+      class: 'chip',
+      text: PERIODS.find((p) => p.value === greeting.period)?.label ?? greeting.period,
+    }));
+    refs.greetingList.append(row);
+  }
+}
+
+async function removeGreeting(greeting) {
+  await guard('Couldn’t remove that greeting.', async () => {
+    await deleteGreeting(greeting.id);
+    state.greetings = state.greetings.filter((g) => g.id !== greeting.id);
+    toast('Greeting removed.', { type: 'success', duration: 2000 });
+    renderGreetings();
+    return true;
+  });
+}
+
+async function addGreeting(event) {
+  event.preventDefault();
+  const body = refs.greetingBody.value.trim();
+  if (!body) {
+    refs.greetingBody.focus();
+    return;
+  }
+
+  await guard('Couldn’t add that greeting.', async () => {
+    const created = await createGreeting({
+      style: state.greetingStyle,
+      period: refs.greetingPeriod.value,
+      body,
+    });
+    state.greetings.push(created);
+    refs.greetingBody.value = '';
+    toast('Greeting added.', { type: 'success', duration: 2000 });
+    renderGreetings();
+    return true;
+  });
 }
 
 /** Avatars cycle rather than open a picker — eight options, one target. */
@@ -523,6 +618,7 @@ export async function initSettingsPage() {
   state.profile = profile;
   initMoney(profile);
   applyProfileTheme(profile.id);
+  mountGreeting(profile);
 
   document.body.prepend(topbar({
     profile,
@@ -551,6 +647,11 @@ export async function initSettingsPage() {
     rate: document.getElementById('exchange-rate'),
     currencySubmit: document.getElementById('currency-submit'),
     preview: document.getElementById('rate-preview'),
+    greetingList: document.getElementById('greeting-list'),
+    greetingForm: document.getElementById('greeting-form'),
+    greetingBody: document.getElementById('greeting-body'),
+    greetingPeriod: document.getElementById('greeting-period'),
+    greetingStyleFilter: document.getElementById('greeting-style-filter'),
     themeGroup: document.getElementById('theme-group'),
     themeNote: document.getElementById('theme-note'),
   };
@@ -580,13 +681,15 @@ export async function initSettingsPage() {
   refs.optionLists.append(skeletonList(2, 'skeleton--card'));
 
   try {
-    const [profiles, optionRows, categories] = await Promise.all([
+    const [profiles, optionRows, categories, greetings] = await Promise.all([
       listProfiles(),
       fetchOptions(),
       fetchCategories(),
+      listGreetings(),
     ]);
     state.profiles = profiles;
     state.categories = categories;
+    state.greetings = greetings;
     state.options = {};
     for (const { kind } of OPTION_KINDS) {
       state.options[kind] = optionRows.filter((row) => row.kind === kind);
@@ -604,9 +707,17 @@ export async function initSettingsPage() {
   }
 
   clear(refs.optionLists);
+  for (const option of GREETING_STYLES) {
+    refs.greetingStyleFilter.append(el('option', { value: option.value, text: option.label }));
+  }
+  for (const period of PERIODS) {
+    refs.greetingPeriod.append(el('option', { value: period.value, text: period.label }));
+  }
+
   await renderProfiles();
   renderOptions();
   renderCategories();
+  renderGreetings();
   wireControls();
 }
 
@@ -633,6 +744,11 @@ async function fetchCategories() {
 
 function wireControls() {
   refs.profileForm.addEventListener('submit', addProfile);
+  refs.greetingForm.addEventListener('submit', addGreeting);
+  refs.greetingStyleFilter.addEventListener('change', () => {
+    state.greetingStyle = refs.greetingStyleFilter.value;
+    renderGreetings();
+  });
   refs.categoryForm.addEventListener('submit', addCategory);
   refs.currencyForm.addEventListener('submit', saveCurrency);
   refs.rate.addEventListener('input', renderRatePreview);

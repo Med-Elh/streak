@@ -1144,6 +1144,20 @@
 }
 .form-grid .field--wide { grid-column: 1 / -1; }
 
+/* A number field with its sign as a button, because no mobile numeric keypad
+   offers a minus key. The button is a real target, not a decoration. */
+.signed-field { display: flex; gap: var(--space-2); align-items: stretch; }
+.signed-field .input { flex: 1 1 auto; min-width: 0; }
+.signed-field__sign {
+  flex: 0 0 auto;
+  min-width: 44px;
+  padding-inline: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  line-height: 1;
+}
+.signed-field__sign.btn--sm { min-width: 34px; font-size: var(--text-sm); }
+
 /* Computed fields read as computed until you overwrite them. */
 .field--computed .input {
   background: var(--surface-2);

@@ -8,27 +8,29 @@
  * fill you got is not always the fill you planned.
  */
 
-import { supabase, describeError } from './supabase.js?v=8';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=8';
-import { requireActiveProfile } from './profiles.js?v=8';
+import { supabase, describeError } from './supabase.js?v=10';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=10';
+import { requireActiveProfile } from './profiles.js?v=10';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner, statRing,
   formatSignedMoney, compactNumber, signClass, formatDate, todayISO, formatPercent,
   moneyContext, initMoney,
   applyProfileTheme,
-} from './ui.js?v=8';
+} from './ui.js?v=10';
 import {
   equityCurveChart, signedBarChart, rateBarChart,
-} from './charts.js?v=8';
+} from './charts.js?v=10';
 import {
   INSTRUMENTS, SESSIONS, SETUPS, EMOTIONS, DIRECTIONS, OUTCOMES, options, loadOptions,
-} from './constants.js?v=8';
+} from './constants.js?v=10';
 import {
   ACCOUNT_STATUSES, evaluate, groupAccounts, pickAccount,
   listAccounts, createAccount, updateAccount, deleteAccount, setStatus,
   loadSelectedAccountId, saveSelectedAccountId,
   isDismissed, dismiss, clearDismissals, hasBaseline, percentOf,
-} from './accounts.js?v=8';
+} from './accounts.js?v=10';
+
+import { mountGreeting } from './greetings.js?v=10';
 
 const state = {
   profile: null,
@@ -893,9 +895,26 @@ function editRow(trade) {
       class: `input input--inline ${col.numeric ? 'input--num' : ''}`,
       type: col.type,
       step: col.numeric ? 'any' : null,
+      inputmode: col.numeric ? 'decimal' : null,
       value: trade[col.key] ?? '',
     });
     inputs[col.key] = input;
+
+    // P&L is the one column that can legitimately be negative, and the phone
+    // keypad has no minus. Same sign button as the log form, in miniature.
+    if (col.key === 'pnl') {
+      return el('td', { class: 'align-right' }, el('div', { class: 'signed-field' }, [
+        input,
+        el('button', {
+          class: 'btn btn--secondary btn--sm signed-field__sign',
+          type: 'button',
+          text: '±',
+          'aria-label': 'Flip the sign of the P&L',
+          onclick: () => toggleSign(input),
+        }),
+      ]));
+    }
+
     return el('td', { class: col.numeric ? 'align-right' : '' }, input);
   });
 
@@ -1163,6 +1182,33 @@ function openAccountModal(account = null) {
   refs.accountName.focus();
 }
 
+/**
+ * Flips a number field between positive and negative.
+ *
+ * The mobile numeric keypads have no minus key — `inputmode="decimal"` gives a
+ * decimal point and nothing else — so a losing trade could not be typed at all
+ * on a phone. This is the sign, as a button.
+ *
+ * An empty field becomes "-0", which reads oddly for a moment but leaves the
+ * caret in a field that is already negative, so typing 250 gives -250.
+ */
+export function flipSign(value) {
+  const raw = String(value ?? '').trim();
+  if (raw === '' || raw === '-') return raw === '-' ? '' : '-0';
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return raw;
+  return String(-n);
+}
+
+function toggleSign(input, { onChange } = {}) {
+  input.value = flipSign(input.value);
+  input.focus();
+  // Put the caret at the end so typing continues the number.
+  const end = input.value.length;
+  try { input.setSelectionRange(end, end); } catch { /* number inputs may refuse */ }
+  onChange?.();
+}
+
 /** Blank means "no limit", so an empty field must stay null rather than zero. */
 const optionalNumber = (input) => {
   const raw = input.value.trim();
@@ -1266,6 +1312,7 @@ export async function initTradingPage() {
   const profile = await requireActiveProfile();
   state.profile = profile;
   applyProfileTheme(profile.id);
+  mountGreeting(profile);
   // Trades are always entered and stored in dollars.
   initMoney(profile, 'trading');
 
@@ -1299,6 +1346,7 @@ export async function initTradingPage() {
     size: document.getElementById('size'),
     rr: document.getElementById('rr'),
     pnl: document.getElementById('pnl'),
+    pnlSign: document.getElementById('pnl-sign'),
     pnlCurrency: document.getElementById('pnl-currency'),
     outcome: document.getElementById('outcome'),
     recalc: document.getElementById('recalc'),
@@ -1433,6 +1481,14 @@ function wireControls() {
     delete refs.rr.dataset.manual;
     delete refs.pnl.dataset.manual;
     recalculate();
+  });
+
+  // Flipping the sign is a manual edit, so it sticks like a typed one does.
+  refs.pnlSign.addEventListener('click', () => {
+    toggleSign(refs.pnl, () => {
+      refs.pnl.dataset.manual = 'true';
+      recalculate();
+    });
   });
 
   refs.ruleForm.addEventListener('submit', addRule);

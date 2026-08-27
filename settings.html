@@ -13,9 +13,9 @@
     href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
     rel="stylesheet" />
 
-  <link rel="stylesheet" href="css/tokens.css?v=8" />
-  <link rel="stylesheet" href="css/base.css?v=8" />
-  <link rel="stylesheet" href="css/components.css?v=8" />
+  <link rel="stylesheet" href="css/tokens.css?v=10" />
+  <link rel="stylesheet" href="css/base.css?v=10" />
+  <link rel="stylesheet" href="css/components.css?v=10" />
 </head>
 
 <body>
@@ -77,6 +77,28 @@
       <p class="hint">The colour is the category’s slice in the Finances chart. Click a swatch on any row to change it.</p>
     </section>
 
+    <!-- Greetings -->
+    <section class="card" aria-labelledby="greetings-title">
+      <div class="card__head">
+        <h2 class="card__title" id="greetings-title">Greetings</h2>
+        <select class="select" id="greeting-style-filter" aria-label="Greeting style"></select>
+      </div>
+      <p class="muted">
+        The line under the heading on each page. Each profile picks its own style
+        above, in the profiles list. Write <code>{name}</code> where the profile
+        name should appear.
+      </p>
+
+      <div class="edit-list" id="greeting-list"></div>
+
+      <form class="quick-add" id="greeting-form">
+        <input class="input quick-add__title" id="greeting-body" maxlength="200"
+          placeholder="Add a line" autocomplete="off" aria-label="New greeting" />
+        <select class="select" id="greeting-period" aria-label="Time of day"></select>
+        <button class="btn btn--secondary" type="submit">Add</button>
+      </form>
+    </section>
+
     <!-- Currency -->
     <section class="card" aria-labelledby="currency-title">
       <div class="card__head">
@@ -126,7 +148,7 @@
   </main>
 
   <script type="module">
-    import { initSettingsPage } from './js/settings.js?v=8';
+    import { initSettingsPage } from './js/settings.js?v=10';
     initSettingsPage();
   </script>
 </body>
