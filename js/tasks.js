@@ -6,17 +6,17 @@
  * and the deadline rather than a checkbox.
  */
 
-import { supabase, describeError } from './supabase.js?v=10';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=10';
-import { requireActiveProfile } from './profiles.js?v=10';
+import { supabase, describeError } from './supabase.js?v=12';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=12';
+import { requireActiveProfile } from './profiles.js?v=12';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
   statRing, formatDate, todayISO, beat,
   applyProfileTheme,
-} from './ui.js?v=10';
-import { PRIORITIES, OBJECTIVE_STATUSES, OBJECTIVE_UNITS, options, labelFor } from './constants.js?v=10';
+} from './ui.js?v=12';
+import { PRIORITIES, OBJECTIVE_STATUSES, OBJECTIVE_UNITS, options, labelFor } from './constants.js?v=12';
 
-import { mountGreeting } from './greetings.js?v=10';
+import { mountGreeting } from './greetings.js?v=12';
 
 const state = {
   profile: null,
@@ -460,8 +460,15 @@ async function addTask(event) {
  * — undoing something shouldn't make you wait through a victory lap.
  */
 async function toggleTask(task, done, checkbox, card) {
-  checkbox.disabled = true;
+  const live = state.tasks.find((t) => t.id === task.id);
+  if (!live) return;
+
+  const previous = { done: live.done, completed_at: live.completed_at };
   const patch = { done, completed_at: done ? new Date().toISOString() : null };
+
+  // Local first: the counter, the "done today" group and the ordering all read
+  // from state.tasks, so they move with the animation rather than after it.
+  Object.assign(live, patch);
 
   if (done && card) {
     card.classList.add('is-completing');
@@ -470,25 +477,16 @@ async function toggleTask(task, done, checkbox, card) {
     await beat(300);
   }
 
+  renderTasks();
+  if (done) toast(`${task.title} done.`, { type: 'success', duration: 2000 });
+
   try {
-    const { data, error } = await supabase
-      .from('tasks')
-      .update(patch)
-      .eq('id', task.id)
-      .select('id, title, notes, due_date, priority, done, completed_at, created_at')
-      .single();
-
+    const { error } = await supabase.from('tasks').update(patch).eq('id', live.id);
     if (error) throw new Error(describeError(error, 'Couldn’t update that task.'));
-
-    Object.assign(state.tasks.find((t) => t.id === task.id), data);
-    if (done) toast(`${task.title} done.`, { type: 'success', duration: 2000 });
-    renderTasks();
   } catch (error) {
-    checkbox.checked = !done;   // put the tick back where it was
-    card?.classList.remove('is-completing', 'is-collapsing');
+    Object.assign(live, previous);
+    renderTasks();
     toast(error.message, { type: 'error' });
-  } finally {
-    checkbox.disabled = false;
   }
 }
 

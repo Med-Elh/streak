@@ -1209,6 +1209,191 @@
 .select--inline { padding-right: var(--space-5); background-position: right 10px center, right 5px center; }
 
 /* ==========================================================================
+   Plans
+   ========================================================================== */
+
+.plan-grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
+}
+
+.plan-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  text-align: center;
+  transition:
+    transform var(--duration-base) var(--ease-out),
+    border-color var(--duration-base) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out);
+}
+.plan-card:hover { transform: translateY(-3px); border-color: var(--border-strong); box-shadow: var(--shadow-md); }
+.plan-card--done { border-color: rgb(var(--positive-rgb) / 0.45); }
+.plan-card__head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
+.plan-card__title {
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+.plan-card__count { font-size: var(--text-sm); color: var(--text-muted); }
+.plan-card__target { font-size: var(--text-xs); color: var(--text-faint); }
+.plan-card__target--soon { color: var(--warning); }
+.plan-card__target--past { color: var(--negative); font-weight: var(--weight-medium); }
+
+.pill--active { background: var(--accent-soft); color: var(--accent); }
+.pill--completed { background: var(--positive-soft); color: var(--positive); }
+.pill--paused { background: var(--warning-soft); color: var(--warning); }
+
+.back-link { align-self: flex-start; }
+
+.plan-detail { display: flex; flex-direction: column; gap: var(--space-5); padding: var(--space-6); }
+.plan-detail__top { display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap; }
+.plan-detail__count { font-size: var(--text-md); color: var(--text); }
+.plan-detail__title {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+}
+
+/* ---- the roadmap --------------------------------------------------------- */
+
+/* A line down the left with the steps threaded onto it. The line is grey; a
+   second line on top of it grows to the share of steps done. */
+.roadmap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-left: var(--space-6);
+}
+.roadmap::before,
+.roadmap__fill {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: var(--radius-pill);
+}
+.roadmap::before { background: var(--border); }
+.roadmap__fill {
+  bottom: auto;
+  background: linear-gradient(180deg, var(--flame-from), var(--flame-to));
+  transition: height var(--duration-slow) var(--ease-out);
+  max-height: calc(100% - 16px);
+}
+
+.step {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  transition:
+    border-color var(--duration-base) var(--ease-out),
+    background var(--duration-base) var(--ease-out),
+    opacity var(--duration-base) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+.step--child { margin-left: var(--space-6); }
+.step:hover { border-color: var(--border-strong); }
+
+/* The dot on the line. Hollow while pending, filled once done. */
+.step__marker {
+  position: absolute;
+  left: calc(var(--space-6) * -1 + 6px);
+  top: var(--space-4);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--border-strong);
+  transition: background var(--duration-base) var(--ease-out),
+              border-color var(--duration-base) var(--ease-out);
+}
+.step--child .step__marker { left: calc(var(--space-6) * -1 + 6px - var(--space-6)); }
+
+.step--done {
+  border-color: rgb(var(--accent-rgb) / 0.45);
+  background: linear-gradient(180deg, rgb(var(--accent-rgb) / 0.06), transparent 60%), var(--surface);
+}
+.step--done .step__marker {
+  background: linear-gradient(160deg, var(--flame-from), var(--flame-to));
+  border-color: transparent;
+}
+.step--done .step__title { color: var(--text-faint); text-decoration: line-through; }
+
+.step__body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.step__row { display: flex; align-items: center; gap: var(--space-3); }
+.step__row input[type='checkbox'] {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.step__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  background: transparent;
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-base);
+  transition: border-color var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out);
+}
+.step__title:hover { border-color: var(--border); }
+.step__title:focus { background: var(--surface-2); border-color: var(--focus); }
+.step__notes { font-size: var(--text-sm); color: var(--text-muted); padding-left: calc(20px + var(--space-3)); }
+.step__note-input { min-height: 72px; font-size: var(--text-sm); }
+
+.step__actions { display: flex; gap: 2px; flex-shrink: 0; }
+.step__action {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-xs);
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+  line-height: 1;
+  transition: background var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out);
+}
+.step__action:hover { background: var(--hover-wash); color: var(--text); }
+.step__action.is-danger:hover { background: var(--negative-soft); color: var(--negative); }
+.step__grip { cursor: grab; }
+
+.step.is-dragging { opacity: 0.45; }
+.step.is-over { border-color: var(--accent); transform: translateX(3px); }
+
+@media (max-width: 620px) {
+  .step { flex-wrap: wrap; }
+  .step__actions { width: 100%; justify-content: flex-end; }
+  .step--child { margin-left: var(--space-4); }
+}
+@media (pointer: coarse) {
+  .step__action { width: 40px; height: 40px; }
+}
+
+/* ==========================================================================
    Wellbeing
    Slower than the rest of the app: more air, longer transitions, nothing that
    pops or congratulates. This section is not a scoreboard.

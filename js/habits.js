@@ -10,21 +10,21 @@
  *    at least one habit was done. Requiring all of them punishes adding a habit.
  */
 
-import { supabase, describeError } from './supabase.js?v=10';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=10';
-import { listProfiles, requireActiveProfile } from './profiles.js?v=10';
+import { supabase, describeError } from './supabase.js?v=12';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=12';
+import { listProfiles, requireActiveProfile } from './profiles.js?v=12';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
   todayISO, formatDate, initials, beat,
   applyProfileTheme,
-} from './ui.js?v=10';
-import { completionChart } from './charts.js?v=10';
+} from './ui.js?v=12';
+import { completionChart } from './charts.js?v=12';
 
 const DAY = 86400000;
 /** Streaks can run long; a year of history is plenty to walk back through. */
 const HISTORY_DAYS = 365;
 
-import { mountGreeting } from './greetings.js?v=10';
+import { mountGreeting } from './greetings.js?v=12';
 
 const state = {
   profile: null,
@@ -128,14 +128,21 @@ async function fetchEntries(habitIds) {
   return data ?? [];
 }
 
-async function toggleToday(habit, done) {
+/** Local state only. The streak, the dots and the grid all read from this. */
+function applyTick(habit, done) {
+  const date = todayISO();
+  if (done) state.entries.push({ habit_id: habit.id, date });
+  else state.entries = state.entries.filter((e) => !(e.habit_id === habit.id && e.date === date));
+}
+
+/** The write. Throws with a sentence the caller can show. */
+async function persistTick(habit, done) {
   const date = todayISO();
   if (done) {
     const { error } = await supabase
       .from('habit_entries')
       .upsert({ habit_id: habit.id, date, completed: true }, { onConflict: 'habit_id,date' });
     if (error) throw new Error(describeError(error, `Couldn’t tick ${habit.name}.`));
-    state.entries.push({ habit_id: habit.id, date });
   } else {
     const { error } = await supabase
       .from('habit_entries')
@@ -143,7 +150,6 @@ async function toggleToday(habit, done) {
       .eq('habit_id', habit.id)
       .eq('date', date);
     if (error) throw new Error(describeError(error, `Couldn’t untick ${habit.name}.`));
-    state.entries = state.entries.filter((e) => !(e.habit_id === habit.id && e.date === date));
   }
 }
 
@@ -260,7 +266,8 @@ function habitCard(habit, isDone) {
 
   const card = el('div', {
     class: 'habit-card',
-    dataset: { done: String(isDone), streak: String(streak) },
+    // The id lets a re-render find this card again to celebrate on it.
+    dataset: { id: habit.id, done: String(isDone), streak: String(streak) },
   });
 
   const tick = el('button', {
@@ -380,37 +387,36 @@ function menuItem(label, description, action, modifier = '') {
  * so it gets a beat of acknowledgement before the page rearranges itself.
  */
 async function onTick(habit, wasDone, tick, card) {
-  tick.disabled = true;
   const extending = !wasDone;
+  const before = state.lastHeroStreak;
+
+  // Everything the tick affects — the hero count and ring, the seven-day dots,
+  // the contribution grid, the board — reads from state.entries, so changing it
+  // here means the whole page moves on this frame rather than after the write.
+  applyTick(habit, extending);
+  if (extending) tick.classList.add('is-ticking');
+
+  // Render before celebrating, so the pop happens on the new count rather than
+  // over the old one that is about to be replaced.
+  renderAll();
+
+  if (extending && profileStreak(state.profile.id) > before) {
+    refs.hero?.classList.add('is-celebrating');
+    refs.today.querySelector(`[data-id="${habit.id}"]`)?.classList.add('is-celebrating');
+    await beat(520);
+  }
+
+  toast(wasDone ? `${habit.name} unticked.` : `${habit.name} done today.`, {
+    type: 'success',
+    duration: 2200,
+  });
 
   try {
-    if (extending) {
-      tick.classList.add('is-ticking');
-      card.dataset.done = 'true';
-      card.querySelector('.habit-tick span:last-child').textContent = 'Done today';
-    }
-
-    await toggleToday(habit, extending);
-
-    if (extending) {
-      const grew = profileStreak(state.profile.id) > state.lastHeroStreak;
-      if (grew) {
-        refs.hero?.classList.add('is-celebrating');
-        card.classList.add('is-celebrating');
-      }
-      await beat(520);
-    }
-
-    toast(wasDone ? `${habit.name} unticked.` : `${habit.name} done today.`, {
-      type: 'success',
-      duration: 2200,
-    });
-    renderAll();
+    await persistTick(habit, extending);
   } catch (error) {
+    applyTick(habit, wasDone);   // put it back exactly as it was
+    renderAll();
     toast(error.message, { type: 'error' });
-    tick.disabled = false;
-    tick.classList.remove('is-ticking');
-    card.dataset.done = String(wasDone);
   }
 }
 

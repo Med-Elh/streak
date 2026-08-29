@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en" data-booting>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <meta http-equiv="Cache-Control" content="no-cache" />
+  <title>Plans · Streak.</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
+    rel="stylesheet" />
+
+  <link rel="stylesheet" href="css/tokens.css?v=12" />
+  <link rel="stylesheet" href="css/base.css?v=12" />
+  <link rel="stylesheet" href="css/components.css?v=12" />
+</head>
+
+<body>
+  <main class="page stack-lg">
+    <div class="page-head">
+      <div>
+        <p class="eyebrow">Plans</p>
+        <h1>What <span id="profile-name"></span> is building toward</h1>
+      </div>
+      <button class="btn btn--primary" type="button" id="new-plan">New plan</button>
+    </div>
+
+    <!-- List view -->
+    <section class="stack" id="plan-list" aria-label="Plans">
+      <div id="plan-list-body"></div>
+      <div id="plan-list-closed"></div>
+    </section>
+
+    <!-- Detail view -->
+    <section class="stack-lg" id="plan-detail" hidden aria-label="Plan">
+      <button class="btn btn--ghost btn--sm back-link" type="button" id="back-to-plans">
+        ‹ All plans
+      </button>
+
+      <div class="card plan-detail">
+        <div class="plan-detail__top" id="plan-progress"></div>
+
+        <div class="stack">
+          <div class="field">
+            <label class="label" for="plan-title">Title</label>
+            <input class="input plan-detail__title" id="plan-title" maxlength="120" />
+          </div>
+
+          <div class="field">
+            <label class="label" for="plan-description">Description</label>
+            <textarea class="textarea" id="plan-description" maxlength="1000"
+              placeholder="What this plan is for, and what finishing it looks like."></textarea>
+          </div>
+
+          <div class="entry-form">
+            <div class="field">
+              <label class="label" for="plan-target">Target date</label>
+              <input class="input" type="date" id="plan-target" />
+            </div>
+            <div class="field">
+              <label class="label" for="plan-status">Status</label>
+              <select class="select" id="plan-status"></select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <section class="stack" aria-labelledby="steps-title">
+        <h2 class="card__title" id="steps-title">Steps</h2>
+        <p class="hint">
+          Drag a step by its ☰ handle to reorder, or use ↑ and ↓. ⇥ nests a step
+          under the one above it.
+        </p>
+
+        <div id="roadmap"></div>
+
+        <form class="quick-add" id="step-form">
+          <input class="input quick-add__title" id="step-input" maxlength="200"
+            placeholder="Add a step and press enter" autocomplete="off" aria-label="New step" />
+          <button class="btn btn--secondary" type="submit">Add step</button>
+        </form>
+      </section>
+
+      <div class="row row-end">
+        <button class="btn btn--danger btn--sm" type="button" id="delete-plan">Delete plan</button>
+      </div>
+    </section>
+  </main>
+
+  <dialog class="modal" id="plan-modal" aria-labelledby="plan-modal-title">
+    <form id="new-plan-form">
+      <div class="modal__head">
+        <h2 class="modal__title" id="plan-modal-title">New plan</h2>
+        <button class="btn btn--icon" type="button" id="plan-close" aria-label="Close">×</button>
+      </div>
+
+      <div class="modal__body stack">
+        <p class="banner banner--error" id="plan-error" role="alert" hidden></p>
+
+        <div class="field">
+          <label class="label" for="new-title">Title</label>
+          <input class="input" id="new-title" maxlength="120" required autocomplete="off"
+            placeholder="Pass the funded challenge" />
+        </div>
+
+        <div class="field">
+          <label class="label" for="new-description">Description <span class="faint">(optional)</span></label>
+          <textarea class="textarea" id="new-description" maxlength="1000"></textarea>
+        </div>
+
+        <div class="field">
+          <label class="label" for="new-target">Target date <span class="faint">(optional)</span></label>
+          <input class="input" type="date" id="new-target" />
+        </div>
+      </div>
+
+      <div class="modal__foot">
+        <button class="btn btn--secondary" type="button" id="plan-cancel">Cancel</button>
+        <button class="btn btn--primary" type="submit" id="plan-submit">Create plan</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module">
+    import { initPlansPage } from './js/plans.js?v=12';
+    initPlansPage();
+  </script>
+</body>
+</html>

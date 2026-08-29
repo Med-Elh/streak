@@ -314,6 +314,7 @@ export function initials(name = '') {
 const NAV = [
   ['habits.html', 'Habits'],
   ['tasks.html', 'Tasks'],
+  ['plans.html', 'Plans'],
   ['wellbeing.html', 'Wellbeing'],
   ['finances.html', 'Finances'],
   ['trading.html', 'Trading'],
