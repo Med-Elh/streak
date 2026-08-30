@@ -47,6 +47,40 @@ export function beat(ms) {
   return new Promise((resolve) => setTimeout(resolve, prefersReducedMotion() ? 0 : ms));
 }
 
+/**
+ * Counts a number up to its value. Instant when motion is reduced, and instant
+ * for a value that hasn't moved — a stat that re-renders unchanged shouldn't
+ * animate again.
+ */
+export function countUp(node, value, { duration = 650, format = (v) => String(Math.round(v)) } = {}) {
+  const target = Number(value);
+  if (!Number.isFinite(target)) {
+    node.textContent = format(0);
+    return;
+  }
+  if (prefersReducedMotion() || duration <= 0) {
+    node.textContent = format(target);
+    return;
+  }
+
+  const from = Number(node.dataset.value ?? 0);
+  node.dataset.value = String(target);
+  if (from === target) {
+    node.textContent = format(target);
+    return;
+  }
+
+  const start = performance.now();
+  const step = (now) => {
+    const t = Math.min((now - start) / duration, 1);
+    // Ease out: fast at first, settling onto the number.
+    const eased = 1 - (1 - t) ** 3;
+    node.textContent = format(from + (target - from) * eased);
+    if (t < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
 /* --------------------------------------------------------------- toasts -- */
 
 function toastRegion() {
@@ -318,6 +352,7 @@ const NAV = [
   ['wellbeing.html', 'Wellbeing'],
   ['finances.html', 'Finances'],
   ['trading.html', 'Trading'],
+  ['backtest.html', 'Backtest'],
   ['settings.html', 'Settings'],
 ];
 

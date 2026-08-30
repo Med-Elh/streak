@@ -13,9 +13,9 @@
     href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
     rel="stylesheet" />
 
-  <link rel="stylesheet" href="css/tokens.css?v=12" />
-  <link rel="stylesheet" href="css/base.css?v=12" />
-  <link rel="stylesheet" href="css/components.css?v=12" />
+  <link rel="stylesheet" href="css/tokens.css?v=14" />
+  <link rel="stylesheet" href="css/base.css?v=14" />
+  <link rel="stylesheet" href="css/components.css?v=14" />
 </head>
 
 <body>
@@ -196,13 +196,17 @@
             <span class="calendar__month" id="cal-month" aria-live="polite"></span>
             <button class="calendar__arrow" type="button" id="cal-next" aria-label="Next month">›</button>
           </div>
-          <div class="calendar__grid" id="cal-grid"></div>
+          <div class="calendar__grid" id="cal-grid" role="group"
+            aria-label="Days with trades — arrow keys to move, enter to open"></div>
           <div class="calendar__foot">
             <span class="panel__label">This month</span>
             <span class="num num--muted" id="cal-summary"></span>
           </div>
         </div>
       </div>
+
+      <!-- The selected day, below the calendar rather than over it. -->
+      <div class="day-panel" id="day-panel" role="region" aria-label="Selected day" hidden></div>
     </section>
 
     <!-- Filters + table -->
@@ -362,7 +366,7 @@
   </dialog>
 
   <script type="module">
-    import { initTradingPage } from './js/trading.js?v=12';
+    import { initTradingPage } from './js/trading.js?v=14';
     initTradingPage();
   </script>
 </body>

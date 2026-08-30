@@ -9,7 +9,7 @@
  */
 
 import Chart from 'https://esm.sh/chart.js@4/auto';
-import { formatMoney, compactMoney } from './ui.js?v=12';
+import { formatMoney, compactMoney } from './ui.js?v=14';
 
 /* Registry of live charts, so a theme flip can rebuild them with new colours. */
 const live = new Map();
@@ -529,6 +529,299 @@ export function rateBarChart(canvas, { labels, values, counts, slot = 1 }) {
                 const n = counts?.[ctx.dataIndex] ?? 0;
                 return ` ${Math.round(ctx.parsed.x)}% of ${n} trade${n === 1 ? '' : 's'}`;
               },
+            },
+          },
+        },
+      },
+    };
+  };
+  return mount(canvas, builder(), builder);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Backtesting                                                                */
+/* ------------------------------------------------------------------------- */
+
+/** Animation is opt-in per draw, and always nothing when motion is reduced. */
+function motion(animate, config) {
+  if (!animate || prefersReducedMotion()) return { duration: 0 };
+  return config;
+}
+
+/**
+ * Equity in R. Straight segments — a backtest is a sequence of discrete
+ * outcomes, and curving between them implies a path that never existed.
+ * Draws left to right on first paint.
+ */
+export function rEquityChart(canvas, { labels, values, animate = false }) {
+  const builder = () => {
+    const c = chrome();
+    const end = values.at(-1) ?? 0;
+    const line = end >= 0 ? c.positive : c.negative;
+    const lastIndex = values.length - 1;
+
+    return {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Cumulative R',
+          data: values,
+          borderColor: line,
+          borderWidth: 2,
+          tension: 0,
+          stepped: false,
+          backgroundColor: (ctx) => {
+            const { chart } = ctx;
+            if (!chart.chartArea) return 'transparent';
+            const { top, bottom } = chart.chartArea;
+            const g = chart.ctx.createLinearGradient(0, top, 0, bottom);
+            g.addColorStop(0, alpha(line, 0.3));
+            g.addColorStop(1, alpha(line, 0));
+            return g;
+          },
+          fill: 'origin',
+          pointRadius: (ctx) => (ctx.dataIndex === lastIndex ? 5 : 0),
+          pointHoverRadius: 5,
+          pointBackgroundColor: line,
+          pointBorderColor: c.surface,
+          pointBorderWidth: 2,
+        }],
+      },
+      options: {
+        ...baseOptions(c),
+        animation: motion(animate, {
+          duration: 900,
+          easing: 'easeOutQuart',
+          // Sweeping x from the left is what "drawing" actually looks like.
+          x: { from: 0 },
+        }),
+        plugins: {
+          ...baseOptions(c).plugins,
+          breakEvenLine: { color: c.axis },
+          tooltip: {
+            ...baseOptions(c).plugins.tooltip,
+            callbacks: { label: (ctx) => ` ${ctx.parsed.y >= 0 ? '+' : ''}${ctx.parsed.y.toFixed(2)}R` },
+          },
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            border: { display: false },
+            ticks: { color: c.faint, font: { family: c.mono, size: 11 }, maxRotation: 0, autoSkipPadding: 24 },
+          },
+          y: {
+            grid: { color: c.grid, drawTicks: false },
+            border: { display: false },
+            ticks: {
+              color: c.faint,
+              font: { family: c.mono, size: 11 },
+              padding: 10,
+              callback: (v) => `${v}R`,
+            },
+          },
+        },
+      },
+      plugins: [breakEvenLine],
+    };
+  };
+  return mount(canvas, builder(), builder);
+}
+
+/** Win rate by tag, growing out of zero, each bar carrying its sample size. */
+export function rateBarsChart(canvas, { labels, values, counts, slot = 1, animate = false }) {
+  const builder = () => {
+    const c = chrome();
+    return {
+      type: 'bar',
+      data: {
+        labels: labels.map((l, i) => `${l} (${counts[i]})`),
+        datasets: [{
+          label: 'Win rate',
+          data: values,
+          backgroundColor: seriesColor(slot),
+          borderRadius: 4,
+          borderSkipped: false,
+          maxBarThickness: 30,
+        }],
+      },
+      options: {
+        ...baseOptions(c),
+        indexAxis: 'y',
+        animation: motion(animate, { duration: 800, easing: 'easeOutQuart' }),
+        scales: {
+          x: {
+            min: 0,
+            max: 100,
+            grid: { color: c.grid, drawTicks: false },
+            border: { display: false },
+            ticks: { color: c.faint, font: { family: c.mono, size: 11 }, stepSize: 25, callback: (v) => `${v}%` },
+          },
+          y: {
+            grid: { display: false },
+            border: { color: c.axis },
+            ticks: { color: c.muted, font: { family: c.font, size: 11 } },
+          },
+        },
+        plugins: {
+          ...baseOptions(c).plugins,
+          tooltip: {
+            ...baseOptions(c).plugins.tooltip,
+            callbacks: {
+              label: (ctx) => ` ${Math.round(ctx.parsed.x)}% of ${counts[ctx.dataIndex]} trades`,
+            },
+          },
+        },
+      },
+    };
+  };
+  return mount(canvas, builder(), builder);
+}
+
+/** Win, loss and breakeven. Status colours, because that is what these are. */
+export function outcomeDonut(canvas, { wins, losses, breakevens, animate = false }) {
+  const builder = () => {
+    const c = chrome();
+    const total = wins + losses + breakevens;
+    return {
+      type: 'doughnut',
+      data: {
+        labels: ['Win', 'Loss', 'Breakeven'],
+        datasets: [{
+          data: [wins, losses, breakevens],
+          backgroundColor: [c.positive, c.negative, c.neutral],
+          borderColor: c.surface,
+          borderWidth: 2,
+          hoverOffset: 6,
+        }],
+      },
+      options: {
+        ...baseOptions(c, { legend: true }),
+        cutout: '62%',
+        interaction: { mode: 'nearest', intersect: true },
+        animation: motion(animate, { animateRotate: true, animateScale: false, duration: 900 }),
+        plugins: {
+          ...baseOptions(c, { legend: true }).plugins,
+          tooltip: {
+            ...baseOptions(c).plugins.tooltip,
+            callbacks: {
+              label: (ctx) => ` ${ctx.parsed} of ${total} · ${total ? Math.round((ctx.parsed / total) * 100) : 0}%`,
+            },
+          },
+        },
+      },
+    };
+  };
+  return mount(canvas, builder(), builder);
+}
+
+/** Win rate over a trailing window — the shape of a sample settling down. */
+export function rollingRateChart(canvas, { labels, values, animate = false }) {
+  const builder = () => {
+    const c = chrome();
+    const color = seriesColor(3);
+    return {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Rolling win rate',
+          data: values,
+          borderColor: color,
+          backgroundColor: color,
+          borderWidth: 2,
+          tension: 0.3,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          fill: false,
+        }],
+      },
+      options: {
+        ...baseOptions(c),
+        animation: motion(animate, { duration: 900, easing: 'easeOutQuart', x: { from: 0 } }),
+        scales: {
+          x: {
+            grid: { display: false },
+            border: { display: false },
+            ticks: { color: c.faint, font: { family: c.mono, size: 11 }, maxRotation: 0, autoSkipPadding: 28 },
+          },
+          y: {
+            min: 0,
+            max: 100,
+            grid: { color: c.grid, drawTicks: false },
+            border: { display: false },
+            ticks: { color: c.faint, font: { family: c.mono, size: 11 }, stepSize: 25, callback: (v) => `${v}%` },
+          },
+        },
+        plugins: {
+          ...baseOptions(c).plugins,
+          tooltip: {
+            ...baseOptions(c).plugins.tooltip,
+            callbacks: {
+              label: (ctx) => ` ${ctx.parsed.y.toFixed(1)}% over the last 20`,
+            },
+          },
+        },
+      },
+    };
+  };
+  return mount(canvas, builder(), builder);
+}
+
+/**
+ * Sessions side by side. Win rate and expectancy are different units, so this
+ * is two datasets on one categorical axis — grouped bars, not a second y-scale.
+ * Expectancy is scaled ×10 for legibility and labelled as such in the tooltip.
+ */
+export function compareBarsChart(canvas, { labels, winRates, expectancies, animate = false }) {
+  const builder = () => {
+    const c = chrome();
+    return {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Win rate %',
+            data: winRates,
+            backgroundColor: seriesColor(1),
+            borderRadius: 4,
+            borderSkipped: false,
+            maxBarThickness: 28,
+          },
+          {
+            label: 'Expectancy (R ×10)',
+            data: expectancies.map((e) => e * 10),
+            backgroundColor: seriesColor(2),
+            borderRadius: 4,
+            borderSkipped: false,
+            maxBarThickness: 28,
+          },
+        ],
+      },
+      options: {
+        ...baseOptions(c, { legend: true }),
+        animation: motion(animate, { duration: 800, easing: 'easeOutQuart' }),
+        scales: {
+          x: {
+            grid: { display: false },
+            border: { color: c.axis },
+            ticks: { color: c.muted, font: { family: c.font, size: 11 } },
+          },
+          y: {
+            grid: { color: c.grid, drawTicks: false },
+            border: { display: false },
+            ticks: { color: c.faint, font: { family: c.mono, size: 11 } },
+          },
+        },
+        plugins: {
+          ...baseOptions(c, { legend: true }).plugins,
+          tooltip: {
+            ...baseOptions(c).plugins.tooltip,
+            callbacks: {
+              label: (ctx) => (ctx.datasetIndex === 0
+                ? ` ${Math.round(ctx.parsed.y)}% win rate`
+                : ` ${(ctx.parsed.y / 10).toFixed(2)}R per trade`),
             },
           },
         },

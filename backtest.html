@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en" data-booting>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <meta http-equiv="Cache-Control" content="no-cache" />
+  <title>Backtest · Streak.</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
+    rel="stylesheet" />
+
+  <link rel="stylesheet" href="css/tokens.css?v=14" />
+  <link rel="stylesheet" href="css/base.css?v=14" />
+  <link rel="stylesheet" href="css/components.css?v=14" />
+</head>
+
+<body>
+  <main class="page stack-lg">
+    <div class="page-head">
+      <div>
+        <p class="eyebrow">Backtest</p>
+        <h1><span id="profile-name"></span>’s sandbox</h1>
+      </div>
+      <div class="row row-wrap">
+        <button class="btn btn--secondary" type="button" id="open-compare">Compare</button>
+        <button class="btn btn--primary" type="button" id="new-session">New session</button>
+      </div>
+    </div>
+
+    <!-- Sessions -->
+    <section id="view-list" aria-label="Sessions">
+      <div id="session-list"></div>
+    </section>
+
+    <!-- One session -->
+    <section class="stack-lg" id="view-session" hidden aria-label="Session">
+      <button class="btn btn--ghost btn--sm back-link" type="button" id="back-to-sessions">
+        ‹ All sessions
+      </button>
+
+      <div class="stack">
+        <h2 class="card__title" id="session-name"></h2>
+        <p class="hint" id="session-meta"></p>
+      </div>
+
+      <!-- Live stats, pinned above the buttons -->
+      <div class="bt-live" id="live-bar" aria-label="Live stats"></div>
+
+      <!-- One tap per trade -->
+      <section class="card bt-logger" aria-labelledby="log-title">
+        <h3 class="card__title" id="log-title">Log a trade</h3>
+
+        <div class="bt-buttons">
+          <button class="bt-button bt-button--win" type="button" data-outcome="win">
+            <span class="bt-button__label">Win</span>
+            <span class="bt-button__key">W</span>
+          </button>
+          <button class="bt-button bt-button--loss" type="button" data-outcome="loss">
+            <span class="bt-button__label">Loss</span>
+            <span class="bt-button__key">L</span>
+          </button>
+          <button class="bt-button bt-button--be" type="button" data-outcome="breakeven">
+            <span class="bt-button__label">Breakeven</span>
+            <span class="bt-button__key">B</span>
+          </button>
+        </div>
+
+        <div class="row row-between row-wrap">
+          <p class="hint">Tags are optional. Tap one to attach it to the next trade.</p>
+          <button class="btn btn--ghost btn--sm" type="button" id="undo-trade">Undo last</button>
+        </div>
+
+        <div class="stack-sm">
+          <span class="label">Session</span>
+          <div class="tag-row" id="session-tags" role="group" aria-label="Session tag"></div>
+        </div>
+
+        <div class="stack-sm">
+          <span class="label">Setup</span>
+          <div class="tag-row" id="setup-tags" role="group" aria-label="Setup tag"></div>
+        </div>
+
+        <details class="collapse bt-extra">
+          <summary>Override R or add a note</summary>
+          <div class="entry-form">
+            <div class="field">
+              <label class="label" for="r-override">R for the next trade</label>
+              <input class="input input--num" id="r-override" type="number" min="0" step="any"
+                inputmode="decimal" placeholder="Uses the session default" />
+            </div>
+            <div class="field">
+              <label class="label" for="trade-note">Note</label>
+              <input class="input" id="trade-note" maxlength="200" autocomplete="off" />
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <!-- Charts -->
+      <section class="stack" aria-labelledby="bt-charts-title">
+        <h3 class="card__title" id="bt-charts-title">Performance</h3>
+
+        <div class="panel">
+          <div class="panel__head">
+            <span class="panel__label">Equity in R</span>
+            <span class="panel__total" id="bt-equity-total">—</span>
+          </div>
+          <div class="chart chart--tall">
+            <canvas id="bt-equity" aria-label="Cumulative R over the session"></canvas>
+            <p class="chart-empty" id="bt-equity-empty" hidden></p>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <div class="panel">
+            <span class="panel__label">Win rate by setup</span>
+            <div class="chart">
+              <canvas id="bt-setup" aria-label="Win rate by setup"></canvas>
+              <p class="chart-empty" id="bt-setup-empty" hidden></p>
+            </div>
+          </div>
+          <div class="panel">
+            <span class="panel__label">Win rate by session</span>
+            <div class="chart">
+              <canvas id="bt-session" aria-label="Win rate by session"></canvas>
+              <p class="chart-empty" id="bt-session-empty" hidden></p>
+            </div>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <div class="panel">
+            <span class="panel__label">Outcome split</span>
+            <div class="chart">
+              <canvas id="bt-donut" aria-label="Wins, losses and breakevens"></canvas>
+              <p class="chart-empty" id="bt-donut-empty" hidden></p>
+            </div>
+          </div>
+          <div class="panel">
+            <span class="panel__label">Rolling win rate · last 20</span>
+            <div class="chart">
+              <canvas id="bt-rolling" aria-label="Rolling win rate over the last twenty trades"></canvas>
+              <p class="chart-empty" id="bt-rolling-empty" hidden></p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Trades -->
+      <section class="stack" aria-labelledby="bt-trades-title">
+        <h3 class="card__title" id="bt-trades-title">Trades</h3>
+        <div class="card card--flush" id="trade-list"></div>
+      </section>
+
+      <div class="row row-between row-wrap">
+        <div class="field">
+          <label class="label" for="session-status">Status</label>
+          <select class="select" id="session-status"></select>
+        </div>
+        <button class="btn btn--danger btn--sm" type="button" id="delete-session">Delete session</button>
+      </div>
+    </section>
+
+    <!-- Compare -->
+    <section class="stack-lg" id="view-compare" hidden aria-label="Compare sessions">
+      <button class="btn btn--ghost btn--sm back-link" type="button" id="compare-back">
+        ‹ All sessions
+      </button>
+
+      <div class="panel">
+        <span class="panel__label">Sessions side by side</span>
+        <div class="chart chart--tall">
+          <canvas id="compare-chart" aria-label="Win rate and expectancy by session"></canvas>
+        </div>
+      </div>
+
+      <div class="card card--flush" id="compare-table"></div>
+
+      <section class="card" aria-labelledby="versus-title">
+        <div class="card__head">
+          <h3 class="card__title" id="versus-title">Against the journal</h3>
+          <select class="select" id="compare-select" aria-label="Session to compare"></select>
+        </div>
+        <p class="muted">
+          Read-only. Nothing in Backtest writes to your trading journal, and
+          nothing in the journal is changed by anything here.
+        </p>
+        <div class="versus" id="live-panel"></div>
+      </section>
+    </section>
+  </main>
+
+  <dialog class="modal" id="session-modal" aria-labelledby="session-modal-title">
+    <form id="session-form">
+      <div class="modal__head">
+        <h2 class="modal__title" id="session-modal-title">New session</h2>
+        <button class="btn btn--icon" type="button" id="session-close" aria-label="Close">×</button>
+      </div>
+
+      <div class="modal__body stack">
+        <p class="banner banner--error" id="session-error" role="alert" hidden></p>
+
+        <div class="field">
+          <label class="label" for="new-name">Name</label>
+          <input class="input" id="new-name" maxlength="80" required autocomplete="off"
+            placeholder="XAUUSD 15m — Q1 sweep" />
+        </div>
+
+        <div class="entry-form">
+          <div class="field">
+            <label class="label" for="new-instrument">Instrument</label>
+            <select class="select" id="new-instrument"></select>
+          </div>
+          <div class="field">
+            <label class="label" for="new-timeframe">Timeframe</label>
+            <select class="select" id="new-timeframe"></select>
+          </div>
+          <div class="field">
+            <label class="label" for="new-r">Default R</label>
+            <input class="input input--num" id="new-r" type="number" min="0.1" step="any"
+              inputmode="decimal" value="2" required />
+          </div>
+        </div>
+
+        <div class="entry-form">
+          <div class="field">
+            <label class="label" for="new-start">From <span class="faint">(optional)</span></label>
+            <input class="input" type="date" id="new-start" />
+          </div>
+          <div class="field">
+            <label class="label" for="new-end">To <span class="faint">(optional)</span></label>
+            <input class="input" type="date" id="new-end" />
+          </div>
+        </div>
+      </div>
+
+      <div class="modal__foot">
+        <button class="btn btn--secondary" type="button" id="session-cancel">Cancel</button>
+        <button class="btn btn--primary" type="submit" id="session-submit">Create session</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module">
+    import { initBacktestPage } from './js/backtest.js?v=14';
+    initBacktestPage();
+  </script>
+</body>
+</html>

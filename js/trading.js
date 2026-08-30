@@ -8,29 +8,29 @@
  * fill you got is not always the fill you planned.
  */
 
-import { supabase, describeError } from './supabase.js?v=12';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=12';
-import { requireActiveProfile } from './profiles.js?v=12';
+import { supabase, describeError } from './supabase.js?v=14';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=14';
+import { requireActiveProfile } from './profiles.js?v=14';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner, statRing,
   formatSignedMoney, compactNumber, signClass, formatDate, todayISO, formatPercent,
   moneyContext, initMoney,
   applyProfileTheme,
-} from './ui.js?v=12';
+} from './ui.js?v=14';
 import {
   equityCurveChart, signedBarChart, rateBarChart,
-} from './charts.js?v=12';
+} from './charts.js?v=14';
 import {
   INSTRUMENTS, SESSIONS, SETUPS, EMOTIONS, DIRECTIONS, OUTCOMES, options, loadOptions,
-} from './constants.js?v=12';
+} from './constants.js?v=14';
 import {
   ACCOUNT_STATUSES, evaluate, groupAccounts, pickAccount,
   listAccounts, createAccount, updateAccount, deleteAccount, setStatus,
   loadSelectedAccountId, saveSelectedAccountId,
   isDismissed, dismiss, clearDismissals, hasBaseline, percentOf,
-} from './accounts.js?v=12';
+} from './accounts.js?v=14';
 
-import { mountGreeting } from './greetings.js?v=12';
+import { mountGreeting } from './greetings.js?v=14';
 
 const state = {
   profile: null,
@@ -48,6 +48,7 @@ const state = {
   pendingStatus: null,
   editingAccount: null,
   equityMode: 'amount',   // 'amount' | 'percent'
+  selectedDay: null,
 };
 
 let refs = {};
@@ -724,22 +725,38 @@ function renderCalendar() {
       if (day.pnl > 0) classes.push('cal-cell--profit');
       else if (day.pnl < 0) classes.push('cal-cell--loss');
       else classes.push('cal-cell--flat');
-      // Floored at 0.14 so a small day still reads as a day with trades in it.
-      if (peak) tint = (0.14 + 0.66 * (Math.abs(day.pnl) / peak)).toFixed(2);
+      // Capped low on purpose. The old ceiling of 0.80 put a saturated fill
+      // behind the numbers; 0.08–0.34 still reads as intensity while leaving
+      // the text legible at every level, in both themes.
+      if (peak) tint = (0.08 + 0.26 * (Math.abs(day.pnl) / peak)).toFixed(2);
     }
     if (key === today) classes.push('cal-cell--today');
 
-    refs.calGrid.append(el('div', {
+    const selected = state.selectedDay === key;
+    const cell = el('button', {
       class: classes.join(' '),
+      type: 'button',
       style: tint ? `--tint: ${tint}` : null,
+      dataset: { filled: String(Boolean(day)), date: key },
+      disabled: !day,
+      // Only a day with trades is a target; the rest are just squares.
+      tabindex: day ? (selected || !state.selectedDay ? '0' : '-1') : '-1',
+      'aria-pressed': day ? String(selected) : null,
+      'aria-label': day
+        ? `${formatDate(key)}, ${formatSignedMoney(day.pnl)}, ${day.count} trade${day.count === 1 ? '' : 's'}`
+        : formatDate(key),
       title: day
         ? `${formatDate(key)} · ${formatSignedMoney(day.pnl)} · ${day.count} trade${day.count === 1 ? '' : 's'}`
         : formatDate(key),
+      onclick: () => selectDay(key),
     }, [
       el('span', { class: 'cal-cell__date', text: String(d) }),
       day ? el('span', { class: 'cal-cell__pnl', text: compactNumber(day.pnl) }) : null,
       day ? el('span', { class: 'cal-cell__count', text: `${day.count}×` }) : null,
-    ]));
+    ]);
+
+    if (day) cell.addEventListener('keydown', onCalendarKey);
+    refs.calGrid.append(cell);
   }
 
   refs.calSummary.textContent = monthTrades
@@ -747,9 +764,105 @@ function renderCalendar() {
     : 'No trades this month';
   refs.calSummary.className = `num ${monthTrades ? signClass(monthPnL) : 'num--muted'}`;
 
+  renderDayPanel();
+
   function dayKey(d) {
     return `${state.calendarMonth}-${String(d).padStart(2, '0')}`;
   }
+}
+
+/**
+ * Arrow keys walk the grid a day or a week at a time, skipping over days with
+ * nothing in them — an empty square is not a destination. Enter and Space open
+ * the day, which the button element already handles.
+ */
+function onCalendarKey(event) {
+  const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[event.key];
+  if (!step) return;
+  event.preventDefault();
+
+  const cells = [...refs.calGrid.querySelectorAll('.cal-cell[data-filled="true"]')];
+  const all = [...refs.calGrid.querySelectorAll('.cal-cell')];
+  const here = all.indexOf(event.currentTarget);
+
+  // Walk in the requested direction until a day with trades turns up.
+  for (let i = here + step; i >= 0 && i < all.length; i += (step > 0 ? 1 : -1)) {
+    if (all[i].dataset.filled === 'true') {
+      for (const cell of cells) cell.tabIndex = -1;
+      all[i].tabIndex = 0;
+      all[i].focus();
+      return;
+    }
+  }
+}
+
+/** Clicking the open day closes it; this is a toggle, not a one-way trip. */
+function selectDay(key) {
+  state.selectedDay = state.selectedDay === key ? null : key;
+  renderCalendar();
+  if (state.selectedDay) {
+    refs.calGrid.querySelector(`[data-date="${state.selectedDay}"]`)?.focus();
+  }
+}
+
+/** The day's trades and its numbers, below the calendar rather than over it. */
+function renderDayPanel() {
+  clear(refs.dayPanel);
+  const key = state.selectedDay;
+  if (!key) {
+    refs.dayPanel.hidden = true;
+    return;
+  }
+
+  const rows = visibleTrades().filter((t) => t.date === key);
+  if (!rows.length) {
+    // The filters can empty a day that had trades when it was picked.
+    state.selectedDay = null;
+    refs.dayPanel.hidden = true;
+    return;
+  }
+
+  refs.dayPanel.hidden = false;
+  const stats = computeStats(rows);
+
+  const tile = (label, value, tone = '') => el('div', { class: 'stat' }, [
+    el('span', { class: 'stat__label', text: label }),
+    el('span', { class: `stat__value ${tone}`, text: value }),
+  ]);
+
+  const table = el('table', { class: 'table' }, [
+    el('thead', {}, el('tr', {}, [
+      ...COLUMNS.map((col) => el('th', {
+        class: col.numeric ? 'align-right' : '',
+        text: col.label,
+      })),
+      el('th', { class: 'align-right', text: 'Actions' }),
+    ])),
+  ]);
+  const body = el('tbody');
+  for (const trade of rows) body.append(readRow(trade));
+  table.append(body);
+
+  refs.dayPanel.append(
+    el('div', { class: 'day-panel__head' }, [
+      el('span', { class: 'day-panel__date', text: formatDate(key, { weekday: 'long', day: 'numeric', month: 'long' }) }),
+      el('button', {
+        class: 'btn btn--ghost btn--sm',
+        type: 'button',
+        text: 'Close',
+        'aria-label': 'Close the day panel',
+        onclick: () => selectDay(key),
+      }),
+    ]),
+    el('div', { class: 'day-panel__stats' }, [
+      tile('Net P&L', formatSignedMoney(stats.total), signClass(stats.total)),
+      tile('Trades', String(stats.count)),
+      tile('Win rate', stats.winRate === null ? '—' : `${stats.winRate.toFixed(0)}%`),
+      tile('Best', stats.best === null ? '—' : formatSignedMoney(stats.best), signClass(stats.best)),
+      tile('Worst', stats.worst === null ? '—' : formatSignedMoney(stats.worst), signClass(stats.worst)),
+    ]),
+    el('div', { class: 'table-wrap' }, table),
+  );
 }
 
 /**
@@ -1388,6 +1501,7 @@ export async function initTradingPage() {
     calMonth: document.getElementById('cal-month'),
     calGrid: document.getElementById('cal-grid'),
     calSummary: document.getElementById('cal-summary'),
+    dayPanel: document.getElementById('day-panel'),
     calPrev: document.getElementById('cal-prev'),
     calNext: document.getElementById('cal-next'),
     pnlChart: document.getElementById('pnl-chart'),
