@@ -601,6 +601,51 @@ export function showBanner(node, message, type = 'error') {
   node.hidden = false;
 }
 
+/**
+ * Blames one field for a failed save: reddens it, puts the reason directly
+ * under it, scrolls it into view and focuses it.
+ *
+ * A banner at the top of a long form tells you something went wrong but not
+ * where, which is the whole complaint against "check the form and try again".
+ * Returns false so a validator can `return failField(...)` in one line.
+ */
+export function failField(input, message) {
+  if (!input) return false;
+
+  const field = input.closest('.field') ?? input.parentElement;
+  const id = `${input.id || 'field'}-error`;
+
+  let note = field?.querySelector('.field__error');
+  if (!note) {
+    note = el('p', { class: 'field__error', id, role: 'alert' });
+    field?.append(note);
+  }
+  note.id = id;
+  note.textContent = message;
+
+  input.setAttribute('aria-invalid', 'true');
+  input.setAttribute('aria-describedby', id);
+
+  // Centred rather than nudged to the edge: inside a dialog the field can
+  // otherwise land under the sticky footer.
+  input.scrollIntoView({
+    block: 'center',
+    behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+  });
+  input.focus({ preventScroll: true });
+  return false;
+}
+
+/** Wipes every field-level error under `root`. Call before re-validating. */
+export function clearFieldErrors(root) {
+  if (!root) return;
+  for (const note of root.querySelectorAll('.field__error')) note.remove();
+  for (const input of root.querySelectorAll('[aria-invalid="true"]')) {
+    input.removeAttribute('aria-invalid');
+    input.removeAttribute('aria-describedby');
+  }
+}
+
 /* ---------------------------------------------------------------- theme -- */
 
 /**

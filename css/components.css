@@ -177,7 +177,19 @@
   cursor: not-allowed;
 }
 
-.input[aria-invalid='true'] { border-color: var(--negative); }
+.input[aria-invalid='true'],
+.select[aria-invalid='true'] {
+  border-color: var(--negative);
+}
+
+/* The reason, under the field it belongs to rather than at the top of a form. */
+.field__error {
+  font-size: var(--text-sm);
+  color: var(--negative);
+  display: flex;
+  gap: var(--space-2);
+}
+.field__error::before { content: '↑'; opacity: 0.7; }
 
 .textarea { min-height: 96px; resize: vertical; line-height: var(--leading-snug); }
 
@@ -888,6 +900,18 @@
   align-items: flex-end;
   gap: 2px;
 }
+/* A number and the unit it is counted in, read as one control. */
+.input-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.input-group .input { flex: 1 1 auto; min-width: 0; }
+.input-group .segmented { flex: 0 0 auto; }
+
+/* A field is a stretching column; a segmented control sizes to its labels. */
+.field > .segmented { align-self: flex-start; max-width: 100%; }
+
 .segmented--sm { padding: 2px; }
 .segmented--sm button {
   padding: 3px var(--space-2);
@@ -1213,19 +1237,43 @@
    ========================================================================== */
 
 .bt-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-5);
+  position: relative;
   background: var(--surface);
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-md);
-  text-align: left;
   transition: transform var(--duration-base) var(--ease-out),
               border-color var(--duration-base) var(--ease-out),
               box-shadow var(--duration-base) var(--ease-out);
 }
 .bt-card:hover { transform: translateY(-3px); border-color: var(--border-strong); box-shadow: var(--shadow-md); }
+
+/* The whole card opens the session; Edit sits on top of it in the corner. */
+.bt-card__open {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-5);
+  text-align: left;
+}
+.bt-card__edit {
+  position: absolute;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  transition: background var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out);
+}
+.bt-card__edit:hover { background: var(--hover-wash); color: var(--text); border-color: var(--border-strong); }
+
+/* A quiet divider inside the modal, before the destructive control. */
+.rule { height: 1px; margin: 0; border: 0; background: var(--border); }
 .bt-card__head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .bt-card__name { font-family: var(--font-display); font-size: var(--text-md); font-weight: var(--weight-semibold); }
 .bt-card__meta { font-size: var(--text-xs); color: var(--text-faint); }
@@ -1317,8 +1365,66 @@
   color: var(--accent);
 }
 
+/* What the next tap costs. Stated plainly, because it changes under you in
+   stepped mode and a wrong assumption there invalidates the whole session. */
+.risk-line {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text);
+}
+
 .bt-extra { border-top: var(--border-width) solid var(--border-subtle); }
 .bt-extra .entry-form { padding: var(--space-3) 0; }
+
+/* ---- compare picker ------------------------------------------------------ */
+
+.picker {
+  display: grid;
+  gap: var(--space-5);
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+}
+.picker-group { display: flex; flex-direction: column; gap: var(--space-1); }
+.picker-group__title {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding-bottom: var(--space-2);
+}
+
+.picker-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.picker-item:hover { background: var(--hover-wash); }
+.picker-item.is-full { opacity: 0.45; cursor: not-allowed; }
+.picker-item input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: inherit;
+}
+.picker-item__swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+.picker-item__name { flex: 1 1 auto; min-width: 0; font-size: var(--text-sm); }
+.picker-item__count { font-size: var(--text-xs); color: var(--text-faint); }
+
+/* Live results carry a badge everywhere they appear, so a backtest is never
+   mistaken for money that actually moved. */
+.pill--live {
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 1px var(--space-2);
+  font-size: var(--text-2xs);
+}
 
 /* The read-only comparison against the journal. */
 .versus { display: flex; flex-direction: column; }

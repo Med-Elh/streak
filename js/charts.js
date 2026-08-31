@@ -9,7 +9,7 @@
  */
 
 import Chart from 'https://esm.sh/chart.js@4/auto';
-import { formatMoney, compactMoney } from './ui.js?v=14';
+import { formatMoney, compactMoney } from './ui.js?v=24';
 
 /* Registry of live charts, so a theme flip can rebuild them with new colours. */
 const live = new Map();
@@ -553,7 +553,7 @@ function motion(animate, config) {
  * outcomes, and curving between them implies a path that never existed.
  * Draws left to right on first paint.
  */
-export function rEquityChart(canvas, { labels, values, animate = false }) {
+export function equityAreaChart(canvas, { labels, values, animate = false }) {
   const builder = () => {
     const c = chrome();
     const end = values.at(-1) ?? 0;
@@ -569,7 +569,10 @@ export function rEquityChart(canvas, { labels, values, animate = false }) {
           data: values,
           borderColor: line,
           borderWidth: 2,
-          tension: 0,
+          // Eased rather than angular. The underlying outcomes are still
+          // discrete — the curve is for reading the shape, and the tooltip
+          // gives the exact figure at each point.
+          tension: 0.35,
           stepped: false,
           backgroundColor: (ctx) => {
             const { chart } = ctx;
@@ -601,7 +604,7 @@ export function rEquityChart(canvas, { labels, values, animate = false }) {
           breakEvenLine: { color: c.axis },
           tooltip: {
             ...baseOptions(c).plugins.tooltip,
-            callbacks: { label: (ctx) => ` ${ctx.parsed.y >= 0 ? '+' : ''}${ctx.parsed.y.toFixed(2)}R` },
+            callbacks: { label: (ctx) => ` ${formatMoney(ctx.parsed.y)}` },
           },
         },
         scales: {
@@ -617,7 +620,7 @@ export function rEquityChart(canvas, { labels, values, animate = false }) {
               color: c.faint,
               font: { family: c.mono, size: 11 },
               padding: 10,
-              callback: (v) => `${v}R`,
+              callback: (v) => compactMoney(v),
             },
           },
         },
@@ -763,6 +766,129 @@ export function rollingRateChart(canvas, { labels, values, animate = false }) {
           },
         },
       },
+    };
+  };
+  return mount(canvas, builder(), builder);
+}
+
+/**
+ * One metric across several items, each in its own colour. The legend lives in
+ * HTML beside the chart so it can carry a live/backtest badge, which a
+ * Chart.js legend label cannot.
+ */
+export function metricBarsChart(canvas, { labels, values, colors, format, animate = false }) {
+  const builder = () => {
+    const c = chrome();
+    return {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Value',
+          data: values,
+          backgroundColor: colors,
+          borderRadius: 4,
+          borderSkipped: false,
+          maxBarThickness: 46,
+        }],
+      },
+      options: {
+        ...baseOptions(c),
+        animation: motion(animate, { duration: 750, easing: 'easeOutQuart' }),
+        scales: {
+          x: {
+            grid: { display: false },
+            border: { color: c.axis },
+            ticks: { color: c.muted, font: { family: c.font, size: 11 } },
+          },
+          y: {
+            grid: { color: c.grid, drawTicks: false },
+            border: { display: false },
+            ticks: {
+              color: c.faint,
+              font: { family: c.mono, size: 11 },
+              callback: (v) => (format ? format(v) : v),
+            },
+          },
+        },
+        plugins: {
+          ...baseOptions(c).plugins,
+          tooltip: {
+            ...baseOptions(c).plugins.tooltip,
+            callbacks: { label: (ctx) => ` ${format ? format(ctx.parsed.y) : ctx.parsed.y}` },
+          },
+        },
+      },
+    };
+  };
+  return mount(canvas, builder(), builder);
+}
+
+/**
+ * Several equity curves on one chart, each normalised to open at zero so they
+ * can be read against each other regardless of account size. The x axis is
+ * trade number, not date — the point is shape per trade, not calendar time.
+ */
+export function multiEquityChart(canvas, { series, animate = false }) {
+  const builder = () => {
+    const c = chrome();
+    const longest = Math.max(...series.map((s) => s.values.length), 1);
+
+    return {
+      type: 'line',
+      data: {
+        labels: Array.from({ length: longest }, (_, i) => (i === 0 ? 'Start' : String(i))),
+        datasets: series.map((s) => ({
+          label: s.label,
+          data: s.values,
+          borderColor: s.color,
+          backgroundColor: s.color,
+          borderWidth: 2,
+          // Dashed for live accounts, so the two kinds stay apart even in
+          // greyscale or for a viewer who cannot separate the hues.
+          borderDash: s.live ? [5, 4] : [],
+          tension: 0.35,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          fill: false,
+          spanGaps: true,
+        })),
+      },
+      options: {
+        ...baseOptions(c),
+        animation: motion(animate, { duration: 850, easing: 'easeOutQuart', x: { from: 0 } }),
+        plugins: {
+          ...baseOptions(c).plugins,
+          breakEvenLine: { color: c.axis },
+          tooltip: {
+            ...baseOptions(c).plugins.tooltip,
+            callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ${formatMoney(ctx.parsed.y)}` },
+          },
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            border: { display: false },
+            ticks: {
+              color: c.faint,
+              font: { family: c.mono, size: 11 },
+              maxRotation: 0,
+              autoSkipPadding: 28,
+            },
+          },
+          y: {
+            grid: { color: c.grid, drawTicks: false },
+            border: { display: false },
+            ticks: {
+              color: c.faint,
+              font: { family: c.mono, size: 11 },
+              padding: 10,
+              callback: (v) => compactMoney(v),
+            },
+          },
+        },
+      },
+      plugins: [breakEvenLine],
     };
   };
   return mount(canvas, builder(), builder);

@@ -13,9 +13,9 @@
     href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
     rel="stylesheet" />
 
-  <link rel="stylesheet" href="css/tokens.css?v=14" />
-  <link rel="stylesheet" href="css/base.css?v=14" />
-  <link rel="stylesheet" href="css/components.css?v=14" />
+  <link rel="stylesheet" href="css/tokens.css?v=24" />
+  <link rel="stylesheet" href="css/base.css?v=24" />
+  <link rel="stylesheet" href="css/components.css?v=24" />
 </head>
 
 <body>
@@ -70,9 +70,13 @@
         </div>
 
         <div class="row row-between row-wrap">
-          <p class="hint">Tags are optional. Tap one to attach it to the next trade.</p>
+          <div class="stack-sm">
+            <p class="risk-line" id="risk-line"></p>
+            <p class="hint" id="step-line" hidden></p>
+          </div>
           <button class="btn btn--ghost btn--sm" type="button" id="undo-trade">Undo last</button>
         </div>
+        <p class="hint">Tags are optional. Tap one to attach it to the next trade.</p>
 
         <div class="stack-sm">
           <span class="label">Session</span>
@@ -85,12 +89,12 @@
         </div>
 
         <details class="collapse bt-extra">
-          <summary>Override R or add a note</summary>
+          <summary>Override the risk or add a note</summary>
           <div class="entry-form">
             <div class="field">
-              <label class="label" for="r-override">R for the next trade</label>
-              <input class="input input--num" id="r-override" type="number" min="0" step="any"
-                inputmode="decimal" placeholder="Uses the session default" />
+              <label class="label" for="risk-override">Risk for the next trade <span class="field__currency">USD</span></label>
+              <input class="input input--num" id="risk-override" type="number" min="0" step="any"
+                inputmode="decimal" placeholder="Uses the session's risk" />
             </div>
             <div class="field">
               <label class="label" for="trade-note">Note</label>
@@ -106,11 +110,11 @@
 
         <div class="panel">
           <div class="panel__head">
-            <span class="panel__label">Equity in R</span>
+            <span class="panel__label">Equity</span>
             <span class="panel__total" id="bt-equity-total">—</span>
           </div>
           <div class="chart chart--tall">
-            <canvas id="bt-equity" aria-label="Cumulative R over the session"></canvas>
+            <canvas id="bt-equity" aria-label="Cumulative profit and loss over the session"></canvas>
             <p class="chart-empty" id="bt-equity-empty" hidden></p>
           </div>
         </div>
@@ -161,7 +165,10 @@
           <label class="label" for="session-status">Status</label>
           <select class="select" id="session-status"></select>
         </div>
-        <button class="btn btn--danger btn--sm" type="button" id="delete-session">Delete session</button>
+        <div class="row row-wrap">
+          <button class="btn btn--secondary btn--sm" type="button" id="edit-session">Edit session</button>
+          <button class="btn btn--danger btn--sm" type="button" id="delete-session">Delete session</button>
+        </div>
       </div>
     </section>
 
@@ -171,26 +178,38 @@
         ‹ All sessions
       </button>
 
+      <section class="card" aria-labelledby="picker-title">
+        <div class="card__head">
+          <h3 class="card__title" id="picker-title">What to compare</h3>
+          <span class="hint" id="picker-note"></span>
+        </div>
+        <p class="muted">
+          Read-only throughout. Nothing here writes to your backtests or your
+          trading journal, and nothing moves between them.
+        </p>
+        <div class="picker" id="compare-picker"></div>
+      </section>
+
+      <div class="legend" id="compare-legend"></div>
+
       <div class="panel">
-        <span class="panel__label">Sessions side by side</span>
+        <div class="panel__head">
+          <span class="panel__label">Side by side</span>
+          <select class="select" id="metric-select" aria-label="Metric to chart"></select>
+        </div>
         <div class="chart chart--tall">
-          <canvas id="compare-chart" aria-label="Win rate and expectancy by session"></canvas>
+          <canvas id="compare-chart" aria-label="Selected metric by item"></canvas>
+        </div>
+      </div>
+
+      <div class="panel">
+        <span class="panel__label">Equity curves · each from zero</span>
+        <div class="chart chart--tall">
+          <canvas id="curve-chart" aria-label="Equity curves of the selected items"></canvas>
         </div>
       </div>
 
       <div class="card card--flush" id="compare-table"></div>
-
-      <section class="card" aria-labelledby="versus-title">
-        <div class="card__head">
-          <h3 class="card__title" id="versus-title">Against the journal</h3>
-          <select class="select" id="compare-select" aria-label="Session to compare"></select>
-        </div>
-        <p class="muted">
-          Read-only. Nothing in Backtest writes to your trading journal, and
-          nothing in the journal is changed by anything here.
-        </p>
-        <div class="versus" id="live-panel"></div>
-      </section>
     </section>
   </main>
 
@@ -203,6 +222,13 @@
 
       <div class="modal__body stack">
         <p class="banner banner--error" id="session-error" role="alert" hidden></p>
+
+        <!-- Only shown when editing, because it only matters then. -->
+        <p class="banner banner--info" id="session-edit-note" hidden>
+          Each trade stored its own figures when you logged it, so changing the
+          risk settings here only affects trades logged from now on. Everything
+          already in this session keeps the numbers it was recorded with.
+        </p>
 
         <div class="field">
           <label class="label" for="new-name">Name</label>
@@ -220,10 +246,103 @@
             <select class="select" id="new-timeframe"></select>
           </div>
           <div class="field">
-            <label class="label" for="new-r">Default R</label>
-            <input class="input input--num" id="new-r" type="number" min="0.1" step="any"
-              inputmode="decimal" value="2" required />
+            <label class="label" for="new-balance">Starting balance <span class="field__currency">USD</span></label>
+            <input class="input input--num" id="new-balance" type="number" min="0" step="any"
+              inputmode="decimal" placeholder="10000" />
           </div>
+        </div>
+
+        <div class="entry-form">
+          <div class="field">
+            <label class="label" for="new-risk">Risk per trade <span class="field__currency">USD</span></label>
+            <input class="input input--num" id="new-risk" type="number" min="0.01" step="any"
+              inputmode="decimal" placeholder="150" required />
+          </div>
+          <div class="field">
+            <label class="label" for="new-ratio">Reward ratio</label>
+            <input class="input input--num" id="new-ratio" type="number" min="0.1" step="any"
+              inputmode="decimal" value="2" required />
+            <span class="hint">A win pays risk × this.</span>
+          </div>
+          <div class="field">
+            <label class="label" for="new-mode">Risk mode</label>
+            <select class="select" id="new-mode">
+              <option value="fixed" selected>Fixed</option>
+              <option value="stepped">Stepped</option>
+              <option value="adaptive">Adaptive</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Only relevant in stepped mode, so it stays hidden until then. -->
+        <div class="entry-form" id="step-fields" hidden>
+          <div class="field">
+            <label class="label" for="new-step-trades">Change every</label>
+            <input class="input input--num" id="new-step-trades" type="number" min="1" step="1"
+              inputmode="numeric" placeholder="20" />
+            <span class="hint">Trades between changes.</span>
+          </div>
+          <div class="field">
+            <label class="label" for="new-step-amount">By <span class="field__currency">USD</span></label>
+            <input class="input input--num" id="new-step-amount" type="number" step="any"
+              inputmode="decimal" placeholder="50" />
+            <span class="hint">Negative steps the risk down.</span>
+          </div>
+        </div>
+
+        <!-- Only relevant in adaptive mode, so it stays hidden until then. -->
+        <div class="stack-sm" id="adaptive-fields" hidden>
+          <div class="field">
+            <span class="label" id="reference-label">Measure drawdown</span>
+            <div class="segmented segmented--sm" role="group" aria-labelledby="reference-label">
+              <button type="button" data-reference="peak" aria-pressed="true">From peak</button>
+              <button type="button" data-reference="starting_balance" aria-pressed="false">
+                From starting balance
+              </button>
+            </div>
+            <span class="hint">
+              From peak cuts on any pullback. From starting balance cuts only
+              once you're below where the session began.
+            </span>
+          </div>
+
+          <div class="entry-form">
+            <div class="field">
+              <label class="label" for="new-trigger">Cut risk every</label>
+              <div class="input-group">
+                <input class="input input--num" id="new-trigger" type="number" min="0.01" step="any"
+                  inputmode="decimal" placeholder="10" />
+                <div class="segmented segmented--sm" role="group" aria-label="Trigger unit">
+                  <button type="button" data-trigger-unit="percent" aria-pressed="true">%</button>
+                  <button type="button" data-trigger-unit="dollars" aria-pressed="false">$</button>
+                </div>
+              </div>
+              <span class="hint">Below your peak balance.</span>
+            </div>
+
+            <div class="field">
+              <label class="label" for="new-reduction">By</label>
+              <div class="input-group">
+                <input class="input input--num" id="new-reduction" type="number" min="0" step="any"
+                  inputmode="decimal" placeholder="25" />
+                <div class="segmented segmented--sm" role="group" aria-label="Reduction unit">
+                  <button type="button" data-reduction-unit="percent" aria-pressed="true">%</button>
+                  <button type="button" data-reduction-unit="dollars" aria-pressed="false">$</button>
+                </div>
+              </div>
+              <span class="hint">Each tier down.</span>
+            </div>
+
+            <div class="field">
+              <label class="label" for="new-recovery">Back to full risk</label>
+              <select class="select" id="new-recovery">
+                <option value="on_new_peak" selected>On a new high</option>
+                <option value="stepped_back">One tier at a time</option>
+              </select>
+            </div>
+          </div>
+
+          <p class="banner banner--info" id="adaptive-summary"></p>
         </div>
 
         <div class="entry-form">
@@ -236,6 +355,25 @@
             <input class="input" type="date" id="new-end" />
           </div>
         </div>
+
+        <div class="field">
+          <label class="label" for="new-notes">Notes <span class="faint">(optional)</span></label>
+          <textarea class="textarea" id="new-notes" maxlength="1000"
+            placeholder="What you're testing, and what would make it a pass."></textarea>
+        </div>
+
+        <!-- The destructive escape hatch, kept away from the save button. -->
+        <div class="stack-sm" id="recalc-block" hidden>
+          <hr class="rule" />
+          <span class="label">Reapply these settings to the whole session</span>
+          <p class="hint">
+            Overwrites the stored figures on every trade in this session, including
+            any you overrode by hand. It cannot be undone.
+          </p>
+          <button class="btn btn--danger btn--sm" type="button" id="recalc-all">
+            Recalculate all trades
+          </button>
+        </div>
       </div>
 
       <div class="modal__foot">
@@ -246,7 +384,7 @@
   </dialog>
 
   <script type="module">
-    import { initBacktestPage } from './js/backtest.js?v=14';
+    import { initBacktestPage } from './js/backtest.js?v=24';
     initBacktestPage();
   </script>
 </body>
