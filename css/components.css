@@ -277,6 +277,8 @@
 /* Segmented control (long/short, comparison/solo, settings tabs) */
 .segmented {
   display: inline-flex;
+  /* Long labels wrap to a second row rather than pushing past the viewport. */
+  flex-wrap: wrap;
   padding: 3px;
   gap: 2px;
   background: var(--surface-sunk);
@@ -676,6 +678,26 @@
 
 @media (max-width: 480px) {
   .toast-region { left: var(--space-4); right: var(--space-4); width: auto; }
+
+  /*
+   * Phone width: an input and its paired control stop competing for one row
+   * and take one each. The input gets the full width it needs to be read back,
+   * and the control sits under it at its own size.
+   */
+  .input-group,
+  .signed-field {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+  .input-group .input,
+  .signed-field .input { flex: 1 1 auto; width: 100%; }
+  .input-group .segmented,
+  .signed-field__sign { align-self: flex-start; }
+
+  /* A word-labelled toggle in a field spreads across the row instead. */
+  .field > .segmented { align-self: stretch; }
+  .field > .segmented button { flex: 1 1 auto; }
 }
 
 /* ==========================================================================
@@ -906,11 +928,31 @@
   align-items: center;
   gap: var(--space-2);
 }
-.input-group .input { flex: 1 1 auto; min-width: 0; }
 .input-group .segmented { flex: 0 0 auto; }
+
+/*
+ * An input paired with a control must never be squeezed below readability.
+ *
+ * `min-width: 0` lets a flex item collapse to nothing, and because the paired
+ * control refuses to shrink, the input absorbs every pixel of a narrow row —
+ * ending up too narrow to show what you typed. The floor is five characters
+ * plus the padding and border, since the box is border-box.
+ */
+.input-group .input,
+.signed-field .input {
+  flex: 1 1 60%;
+  min-width: calc(5ch + var(--space-3) * 2 + var(--border-width) * 2);
+}
 
 /* A field is a stretching column; a segmented control sizes to its labels. */
 .field > .segmented { align-self: flex-start; max-width: 100%; }
+
+/* Single-character units. They label a number; they don't need to rival it. */
+.segmented--unit button {
+  min-width: 2.25rem;
+  padding: var(--space-1) var(--space-2);
+  text-align: center;
+}
 
 .segmented--sm { padding: 2px; }
 .segmented--sm button {
@@ -1134,6 +1176,14 @@
   grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
   align-items: end;
 }
+
+/*
+ * Grid items default to `min-width: auto`, which is the intrinsic width of
+ * their contents — so one unshrinkable child pushes the whole track wider than
+ * its column and the panel overflows the screen edge. Both grids opt out.
+ */
+.entry-form > *,
+.form-grid > * { min-width: 0; }
 
 .legend { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-3); }
 .legend__item {

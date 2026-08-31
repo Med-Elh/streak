@@ -13,9 +13,9 @@
     href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
     rel="stylesheet" />
 
-  <link rel="stylesheet" href="css/tokens.css?v=24" />
-  <link rel="stylesheet" href="css/base.css?v=24" />
-  <link rel="stylesheet" href="css/components.css?v=24" />
+  <link rel="stylesheet" href="css/tokens.css?v=25" />
+  <link rel="stylesheet" href="css/base.css?v=25" />
+  <link rel="stylesheet" href="css/components.css?v=25" />
 </head>
 
 <body>
@@ -312,12 +312,12 @@
               <div class="input-group">
                 <input class="input input--num" id="new-trigger" type="number" min="0.01" step="any"
                   inputmode="decimal" placeholder="10" />
-                <div class="segmented segmented--sm" role="group" aria-label="Trigger unit">
+                <div class="segmented segmented--sm segmented--unit" role="group" aria-label="Trigger unit">
                   <button type="button" data-trigger-unit="percent" aria-pressed="true">%</button>
                   <button type="button" data-trigger-unit="dollars" aria-pressed="false">$</button>
                 </div>
               </div>
-              <span class="hint">Below your peak balance.</span>
+              <span class="hint" id="trigger-hint">Below your peak balance.</span>
             </div>
 
             <div class="field">
@@ -325,7 +325,7 @@
               <div class="input-group">
                 <input class="input input--num" id="new-reduction" type="number" min="0" step="any"
                   inputmode="decimal" placeholder="25" />
-                <div class="segmented segmented--sm" role="group" aria-label="Reduction unit">
+                <div class="segmented segmented--sm segmented--unit" role="group" aria-label="Reduction unit">
                   <button type="button" data-reduction-unit="percent" aria-pressed="true">%</button>
                   <button type="button" data-reduction-unit="dollars" aria-pressed="false">$</button>
                 </div>
@@ -384,7 +384,7 @@
   </dialog>
 
   <script type="module">
-    import { initBacktestPage } from './js/backtest.js?v=24';
+    import { initBacktestPage } from './js/backtest.js?v=25';
     initBacktestPage();
   </script>
 </body>

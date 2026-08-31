@@ -13,21 +13,21 @@
 
 import {
   supabase, describeError, constraintOf, columnOf, plainError,
-} from './supabase.js?v=24';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=24';
-import { requireActiveProfile } from './profiles.js?v=24';
+} from './supabase.js?v=25';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=25';
+import { requireActiveProfile } from './profiles.js?v=25';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
   failField, clearFieldErrors,
   countUp, formatDate, todayISO, applyProfileTheme, prefersReducedMotion,
   formatMoney, formatSignedMoney, compactMoney, useCurrency, initMoney,
-} from './ui.js?v=24';
-import { mountGreeting } from './greetings.js?v=24';
-import { SESSIONS, SETUPS, INSTRUMENTS, loadOptions } from './constants.js?v=24';
+} from './ui.js?v=25';
+import { mountGreeting } from './greetings.js?v=25';
+import { SESSIONS, SETUPS, INSTRUMENTS, loadOptions } from './constants.js?v=25';
 import {
   equityAreaChart, rateBarsChart, outcomeDonut, rollingRateChart,
   metricBarsChart, multiEquityChart, seriesColor,
-} from './charts.js?v=24';
+} from './charts.js?v=25';
 
 export const BACKTEST_STATUSES = [
   { value: 'active', label: 'Active' },
@@ -1506,6 +1506,13 @@ function syncModeFields() {
 function renderAdaptiveSummary() {
   if (!refs.adaptiveSummary) return;
 
+  // The hint under the trigger names the reference, so it has to move with it.
+  if (refs.triggerHint) {
+    refs.triggerHint.textContent = state.reference === 'starting_balance'
+      ? 'Below your starting balance.'
+      : 'Below your peak balance.';
+  }
+
   const trigger = Number(refs.newTrigger.value);
   const reduction = Number(refs.newReduction.value);
   if (!Number.isFinite(trigger) || trigger <= 0 || !Number.isFinite(reduction)) {
@@ -1719,6 +1726,7 @@ export async function initBacktestPage() {
     adaptiveFields: document.getElementById('adaptive-fields'),
     adaptiveSummary: document.getElementById('adaptive-summary'),
     newTrigger: document.getElementById('new-trigger'),
+    triggerHint: document.getElementById('trigger-hint'),
     newReduction: document.getElementById('new-reduction'),
     newRecovery: document.getElementById('new-recovery'),
     newNotes: document.getElementById('new-notes'),
