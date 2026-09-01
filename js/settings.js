@@ -7,24 +7,24 @@
  * near-identical ones.
  */
 
-import { supabase, describeError } from './supabase.js?v=25';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=25';
+import { supabase, describeError } from './supabase.js?v=29';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=29';
 import {
   requireActiveProfile, listProfiles, createProfile, renameProfile,
   recolorProfile, deleteProfile, updateCurrency, setActiveProfile, updateGreetingStyle,
-} from './profiles.js?v=25';
+} from './profiles.js?v=29';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
   initials, initMoney, setMoneyContext, moneyContext, formatMoney, useCurrency, swatchPicker,
   setTheme, effectiveTheme, currentTheme, applyProfileTheme,
-} from './ui.js?v=25';
-import { OPTION_KINDS, seedFor } from './constants.js?v=25';
-import { categoryColor, seriesColor } from './charts.js?v=25';
+} from './ui.js?v=29';
+import { OPTION_KINDS, seedFor } from './constants.js?v=29';
+import { categoryColor, seriesColor } from './charts.js?v=29';
 
 import {
   mountGreeting, sessionKey, listGreetings, createGreeting, updateGreeting,
   deleteGreeting, GREETING_STYLES, PERIODS,
-} from './greetings.js?v=25';
+} from './greetings.js?v=29';
 
 const state = {
   profile: null,

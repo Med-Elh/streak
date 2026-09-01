@@ -9,7 +9,7 @@
  */
 
 import Chart from 'https://esm.sh/chart.js@4/auto';
-import { formatMoney, compactMoney } from './ui.js?v=25';
+import { formatMoney, compactMoney } from './ui.js?v=29';
 
 /* Registry of live charts, so a theme flip can rebuild them with new colours. */
 const live = new Map();
@@ -105,6 +105,19 @@ function prefersReducedMotion() {
 
 /** Replaces whatever chart was on this canvas. Canvases are reused, not rebuilt. */
 function mount(canvas, config, builder) {
+  // Chart.js reads `canvas.style` first, so a missing element fails with
+  // "Cannot read properties of undefined (reading 'style')" and no hint as to
+  // which of a page's canvases it was. Say which, and don't take the page down
+  // with it — one absent chart shouldn't cost the reader the other fifteen.
+  if (!canvas) {
+    console.error(
+      'Streak. — chart skipped: the canvas is missing from the page.',
+      'Its element was never found, so the markup and the script disagree.',
+      new Error().stack,
+    );
+    return null;
+  }
+
   live.get(canvas)?.instance.destroy();
   const instance = new Chart(canvas, config);
   live.set(canvas, { instance, builder });

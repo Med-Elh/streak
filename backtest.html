@@ -13,9 +13,9 @@
     href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
     rel="stylesheet" />
 
-  <link rel="stylesheet" href="css/tokens.css?v=25" />
-  <link rel="stylesheet" href="css/base.css?v=25" />
-  <link rel="stylesheet" href="css/components.css?v=25" />
+  <link rel="stylesheet" href="css/tokens.css?v=29" />
+  <link rel="stylesheet" href="css/base.css?v=29" />
+  <link rel="stylesheet" href="css/components.css?v=29" />
 </head>
 
 <body>
@@ -54,6 +54,42 @@
       <section class="card bt-logger" aria-labelledby="log-title">
         <h3 class="card__title" id="log-title">Log a trade</h3>
 
+        <!--
+          The working date. Trades save against this, not against the real
+          clock date — a backtest replays months in an afternoon.
+        -->
+        <div class="day-bar">
+          <button class="btn btn--secondary day-bar__step" type="button" id="prev-day"
+            aria-label="Previous day">←</button>
+
+          <div class="day-bar__current">
+            <span class="day-bar__date" id="working-date-label">—</span>
+            <span class="day-bar__count" id="working-date-count"></span>
+          </div>
+
+          <button class="btn btn--primary day-bar__next" type="button" id="next-day">
+            Next day <span class="day-bar__key" aria-hidden="true">N</span>
+          </button>
+        </div>
+
+        <details class="collapse day-bar__extra">
+          <summary>Jump to a date, or change the weekend rule</summary>
+          <div class="entry-form">
+            <div class="field">
+              <label class="label" for="working-date">Working date</label>
+              <input class="input" type="date" id="working-date" />
+              <span class="hint">Trades log against this date.</span>
+            </div>
+            <div class="field">
+              <label class="check">
+                <input type="checkbox" id="include-weekends" />
+                <span>Include weekends</span>
+              </label>
+              <span class="hint">Off by default — markets are shut, so Next day skips Saturday and Sunday.</span>
+            </div>
+          </div>
+        </details>
+
         <div class="bt-buttons">
           <button class="bt-button bt-button--win" type="button" data-outcome="win">
             <span class="bt-button__label">Win</span>
@@ -88,8 +124,28 @@
           <div class="tag-row" id="setup-tags" role="group" aria-label="Setup tag"></div>
         </div>
 
+        <!-- Everything in here is optional. A trade logs fine without any of it. -->
         <details class="collapse bt-extra">
-          <summary>Override the risk or add a note</summary>
+          <summary>Add detail — exit reason, MFE/MAE, risk override, note</summary>
+
+          <div class="stack-sm">
+            <span class="label">Exit reason</span>
+            <div class="tag-row" id="exit-tags" role="group" aria-label="Exit reason"></div>
+          </div>
+
+          <div class="entry-form">
+            <div class="field">
+              <label class="label" for="trade-mfe">MFE <span class="faint">(R)</span></label>
+              <input class="input input--num" id="trade-mfe" type="number" step="any" min="0"
+                inputmode="decimal" placeholder="How far it ran your way" />
+            </div>
+            <div class="field">
+              <label class="label" for="trade-mae">MAE <span class="faint">(R)</span></label>
+              <input class="input input--num" id="trade-mae" type="number" step="any" min="0"
+                inputmode="decimal" placeholder="How far it ran against you" />
+            </div>
+          </div>
+
           <div class="entry-form">
             <div class="field">
               <label class="label" for="risk-override">Risk for the next trade <span class="field__currency">USD</span></label>
@@ -106,7 +162,12 @@
 
       <!-- Charts -->
       <section class="stack" aria-labelledby="bt-charts-title">
-        <h3 class="card__title" id="bt-charts-title">Performance</h3>
+        <div class="row row-between row-wrap">
+          <h3 class="card__title" id="bt-charts-title">Performance</h3>
+          <button class="btn btn--secondary btn--sm" type="button" id="open-analysis">
+            Analysis
+          </button>
+        </div>
 
         <div class="panel">
           <div class="panel__head">
@@ -172,6 +233,147 @@
       </div>
     </section>
 
+    <!-- Analysis -->
+    <section class="stack-lg" id="view-analysis" hidden aria-label="Analysis">
+      <button class="btn btn--ghost btn--sm back-link" type="button" id="analysis-back">
+        ‹ Back to session
+      </button>
+
+      <div class="stack">
+        <h2 class="card__title">Analysis · <span id="analysis-name"></span></h2>
+        <p class="muted">
+          Read-only. Each breakdown says how many trades it rests on and how
+          many it left out. Anything under 20 trades is marked thin — treat it
+          as a hint worth watching, not a rule worth trading.
+        </p>
+      </div>
+
+      <div class="panel">
+        <div class="panel__head">
+          <span class="panel__label">By trade number within the day</span>
+          <span class="sample" id="an-number-meta"></span>
+        </div>
+        <p class="hint">Whether the later trades of a day still earn their place.</p>
+        <div class="two-col">
+          <div class="chart">
+            <canvas id="an-number-rate" aria-label="Win rate by trade number within the day"></canvas>
+          </div>
+          <div class="chart">
+            <canvas id="an-number-net" aria-label="Net result by trade number within the day"></canvas>
+          </div>
+        </div>
+        <div id="an-number-empty"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel__head">
+          <span class="panel__label">Trade cap simulator</span>
+          <span class="sample" id="an-cap-meta"></span>
+        </div>
+        <div class="field">
+          <label class="label" for="an-cap-slider">
+            Cap at <span class="num" id="an-cap-value">10</span> trades a day
+          </label>
+          <input class="range" type="range" id="an-cap-slider" min="1" max="10" step="1" value="10" />
+          <span class="hint" id="an-cap-note"></span>
+        </div>
+        <div class="chart chart--tall">
+          <canvas id="an-cap-chart" aria-label="Net result at each daily trade cap"></canvas>
+        </div>
+        <div id="an-cap-empty"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel__head">
+          <span class="panel__label">After a loss vs after a win</span>
+          <span class="sample" id="an-after-meta"></span>
+        </div>
+        <p class="hint">The very next trade, and whether the last one changed it.</p>
+        <div class="stat-strip" id="an-after-stats"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel__head">
+          <span class="panel__label">Stop-after-loss simulator</span>
+          <span class="sample" id="an-stop-meta"></span>
+        </div>
+        <p class="hint">Walking away for the day once the losses reach a limit.</p>
+        <div class="chart">
+          <canvas id="an-stop-chart" aria-label="Net result under each stop-after-loss rule"></canvas>
+        </div>
+        <div id="an-stop-table"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel__head">
+          <span class="panel__label">By hour of day</span>
+          <span class="sample" id="an-hour-meta"></span>
+        </div>
+        <div class="two-col">
+          <div class="chart">
+            <canvas id="an-hour-rate" aria-label="Win rate by hour of day"></canvas>
+          </div>
+          <div class="chart">
+            <canvas id="an-hour-net" aria-label="Net result by hour of day"></canvas>
+          </div>
+        </div>
+        <div id="an-hour-empty"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel__head">
+          <span class="panel__label">By day of week</span>
+          <span class="sample" id="an-weekday-meta"></span>
+        </div>
+        <div class="two-col">
+          <div class="chart">
+            <canvas id="an-weekday-rate" aria-label="Win rate by day of week"></canvas>
+          </div>
+          <div class="chart">
+            <canvas id="an-weekday-net" aria-label="Net result by day of week"></canvas>
+          </div>
+        </div>
+        <div id="an-weekday-empty"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel__head">
+          <span class="panel__label">Exit reason</span>
+          <span class="sample" id="an-exit-meta"></span>
+        </div>
+        <p class="hint">
+          Manual exits paying less than targets is the discipline signal to look for.
+        </p>
+        <div class="chart">
+          <canvas id="an-exit-chart" aria-label="Net result by exit reason"></canvas>
+        </div>
+        <div id="an-exit-table"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel__head">
+          <span class="panel__label">MFE and MAE</span>
+          <span class="sample" id="an-mfe-meta"></span>
+        </div>
+        <div id="an-mfe-table"></div>
+        <p class="hint" id="an-ratio-note"></p>
+        <div class="chart chart--tall">
+          <canvas id="an-ratio-chart" aria-label="Net result reconstructed at each reward ratio"></canvas>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel__head">
+          <span class="panel__label">Consecutive losses</span>
+          <span class="sample" id="an-runs-meta"></span>
+        </div>
+        <p class="hint" id="an-runs-note"></p>
+        <div class="chart">
+          <canvas id="an-runs-chart" aria-label="How often losing runs of each length happened"></canvas>
+        </div>
+      </div>
+    </section>
+
     <!-- Compare -->
     <section class="stack-lg" id="view-compare" hidden aria-label="Compare sessions">
       <button class="btn btn--ghost btn--sm back-link" type="button" id="compare-back">
@@ -212,6 +414,33 @@
       <div class="card card--flush" id="compare-table"></div>
     </section>
   </main>
+
+  <dialog class="modal modal--sm" id="date-modal" aria-labelledby="date-modal-title">
+    <form id="date-form">
+      <div class="modal__head">
+        <h2 class="modal__title" id="date-modal-title">Move this trade</h2>
+        <button class="btn btn--icon" type="button" id="date-close" aria-label="Close">×</button>
+      </div>
+
+      <div class="modal__body stack">
+        <p class="banner banner--error" id="date-error" role="alert" hidden></p>
+        <p class="hint" id="date-context"></p>
+
+        <div class="field">
+          <label class="label" for="trade-date">Date</label>
+          <input class="input" type="date" id="trade-date" required />
+          <span class="hint">
+            The time of day is kept as it was, so the hour breakdown doesn't shift.
+          </span>
+        </div>
+      </div>
+
+      <div class="modal__foot">
+        <button class="btn btn--secondary" type="button" id="date-cancel">Cancel</button>
+        <button class="btn btn--primary" type="submit" id="date-submit">Move trade</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog class="modal" id="session-modal" aria-labelledby="session-modal-title">
     <form id="session-form">
@@ -384,7 +613,7 @@
   </dialog>
 
   <script type="module">
-    import { initBacktestPage } from './js/backtest.js?v=25';
+    import { initBacktestPage } from './js/backtest.js?v=29';
     initBacktestPage();
   </script>
 </body>

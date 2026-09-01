@@ -646,6 +646,62 @@ export function clearFieldErrors(root) {
   }
 }
 
+/* -------------------------------------------------------------- infotip -- */
+
+let tipCounter = 0;
+
+/**
+ * A small ⓘ that explains a term or a panel in plain words.
+ *
+ * Hover and keyboard focus open it, and so does a tap — the click toggle is
+ * what makes it work on a phone, where hover doesn't exist. It's a real
+ * button with `aria-describedby`, so a screen reader gets the same sentence
+ * rather than an icon it can't interpret.
+ */
+export function infoTip(text, label = 'What this means') {
+  const id = `tip-${tipCounter += 1}`;
+
+  const bubble = el('span', { class: 'infotip__bubble', role: 'tooltip', id, text });
+  const button = el('button', {
+    class: 'infotip__button',
+    type: 'button',
+    'aria-label': label,
+    'aria-describedby': id,
+    'aria-expanded': 'false',
+    text: 'ⓘ',
+  });
+
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const open = button.getAttribute('aria-expanded') === 'true';
+    closeAllTips();
+    button.setAttribute('aria-expanded', String(!open));
+  });
+
+  return el('span', { class: 'infotip' }, [button, bubble]);
+}
+
+function closeAllTips() {
+  for (const open of document.querySelectorAll('.infotip__button[aria-expanded="true"]')) {
+    open.setAttribute('aria-expanded', 'false');
+  }
+}
+
+// A tap anywhere else, or Escape, dismisses whatever is open.
+document.addEventListener('click', closeAllTips);
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeAllTips();
+});
+
+/** Appends an ⓘ to a node, replacing any it already has. */
+export function attachTip(node, text) {
+  if (!node) return null;
+  node.querySelector('.infotip')?.remove();
+  const tip = infoTip(text);
+  node.append(tip);
+  return tip;
+}
+
 /* ---------------------------------------------------------------- theme -- */
 
 /**

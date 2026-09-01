@@ -947,6 +947,211 @@
 /* A field is a stretching column; a segmented control sizes to its labels. */
 .field > .segmented { align-self: flex-start; max-width: 100%; }
 
+/* ---- working-date bar ---------------------------------------------------- */
+
+/*
+ * The simulated calendar, sitting above the log buttons because it governs
+ * them: every trade below lands on the date shown here. "Next day" is the
+ * primary action — it is how a backtest actually moves.
+ */
+.day-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--surface-sunk);
+  border-radius: var(--radius-sm);
+}
+.day-bar__step { flex: 0 0 auto; min-width: 44px; padding-inline: var(--space-3); }
+.day-bar__current {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: center;
+}
+.day-bar__date {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+  line-height: 1.1;
+}
+.day-bar__count { font-size: var(--text-xs); color: var(--text-faint); }
+.day-bar__next { flex: 0 0 auto; }
+.day-bar__key {
+  margin-inline-start: var(--space-2);
+  padding: 1px var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  border: var(--border-width) solid currentColor;
+  border-radius: 3px;
+  opacity: 0.7;
+}
+.day-bar__extra { margin-top: var(--space-2); }
+
+/* A plain checkbox and its label, as one target. */
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  font-size: var(--text-sm);
+  color: var(--text);
+  cursor: pointer;
+}
+.check input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.check input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* A modal holding one field doesn't need the full width. */
+.modal--sm { max-width: 30rem; }
+
+/* The position within its day, beside the date in the trade table. */
+.day-tag { margin-inline-start: var(--space-2); font-size: var(--text-xs); }
+.nowrap { white-space: nowrap; }
+
+@media (max-width: 480px) {
+  /* The date is the thing being read; the steppers flank it underneath. */
+  .day-bar { flex-wrap: wrap; }
+  .day-bar__current { order: -1; flex: 1 0 100%; }
+  .day-bar__step { flex: 0 0 auto; }
+  .day-bar__next { flex: 1 1 auto; }
+  .day-bar__key { display: none; }
+}
+
+/* ---- infotip ------------------------------------------------------------- */
+
+.infotip { position: relative; display: inline-flex; vertical-align: middle; }
+
+.infotip__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Comfortably tappable without pushing the title around: the box is padding,
+     the glyph stays small. */
+  min-width: 28px;
+  min-height: 28px;
+  margin-inline-start: var(--space-1);
+  padding: 0;
+  font-size: var(--text-sm);
+  line-height: 1;
+  color: var(--text-faint);
+  background: none;
+  border: 0;
+  border-radius: 50%;
+  cursor: help;
+}
+.infotip__button:hover { color: var(--accent); }
+.infotip__button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.infotip__bubble {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 50%;
+  z-index: 30;
+  width: max-content;
+  max-width: min(280px, 70vw);
+  padding: var(--space-3);
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-normal);
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  /* Hidden from pointer and from the accessibility tree until asked for, but
+     still readable via aria-describedby. */
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, -4px);
+  transition: opacity var(--duration-fast) var(--ease-out),
+              transform var(--duration-fast) var(--ease-out),
+              visibility var(--duration-fast);
+}
+.infotip:hover .infotip__bubble,
+.infotip__button:focus-visible + .infotip__bubble,
+.infotip__button[aria-expanded='true'] + .infotip__bubble {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+
+/* Near the right edge the bubble would overflow; anchor it to the end instead. */
+.panel__head .infotip__bubble,
+.sample .infotip__bubble { left: auto; right: 0; transform: translate(0, -4px); }
+.panel__head .infotip:hover .infotip__bubble,
+.panel__head .infotip__button:focus-visible + .infotip__bubble,
+.panel__head .infotip__button[aria-expanded='true'] + .infotip__bubble {
+  transform: translate(0, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .infotip__bubble { transition: none; }
+}
+
+/* ---- verdict ------------------------------------------------------------- */
+
+/*
+ * The sentence under a chart saying what it means. Deliberately not styled as
+ * a caption: it is the point of the panel, and the chart is the evidence.
+ */
+.verdict {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--text);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  border-inline-start: 3px solid var(--accent);
+}
+/* An unreliable reading must not look like a settled one. */
+.verdict--unreliable {
+  color: var(--text-muted);
+  border-inline-start-color: var(--warning);
+}
+.verdict--quiet {
+  color: var(--text-muted);
+  border-inline-start-color: var(--border);
+}
+
+/*
+ * What a breakdown rests on, carried beside its title.
+ *
+ * The sample size is never optional here: a win rate over six trades and one
+ * over six hundred look identical on a bar chart, and only one of them is
+ * worth changing how you trade.
+ */
+.sample {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+}
+.sample__n { font-family: var(--font-mono); }
+.sample__excluded::before { content: '· '; }
+
+.pill--thin {
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.02em;
+}
+
 /* Single-character units. They label a number; they don't need to rival it. */
 .segmented--unit button {
   min-width: 2.25rem;

@@ -13,21 +13,22 @@
 
 import {
   supabase, describeError, constraintOf, columnOf, plainError,
-} from './supabase.js?v=25';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=25';
-import { requireActiveProfile } from './profiles.js?v=25';
+} from './supabase.js?v=29';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=29';
+import { requireActiveProfile } from './profiles.js?v=29';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
-  failField, clearFieldErrors,
+  failField, clearFieldErrors, attachTip,
   countUp, formatDate, todayISO, applyProfileTheme, prefersReducedMotion,
   formatMoney, formatSignedMoney, compactMoney, useCurrency, initMoney,
-} from './ui.js?v=25';
-import { mountGreeting } from './greetings.js?v=25';
-import { SESSIONS, SETUPS, INSTRUMENTS, loadOptions } from './constants.js?v=25';
+} from './ui.js?v=29';
+import { mountGreeting } from './greetings.js?v=29';
+import { SESSIONS, SETUPS, INSTRUMENTS, loadOptions } from './constants.js?v=29';
 import {
   equityAreaChart, rateBarsChart, outcomeDonut, rollingRateChart,
   metricBarsChart, multiEquityChart, seriesColor,
-} from './charts.js?v=25';
+  signedBarChart, countBarChart,
+} from './charts.js?v=29';
 
 export const BACKTEST_STATUSES = [
   { value: 'active', label: 'Active' },
@@ -46,7 +47,11 @@ const state = {
   sessionId: null,
   trades: [],
   counts: new Map(),
-  tags: { session: null, setup: null },
+  tags: { session: null, setup: null, exit: null },
+  capResult: null,
+  workingDate: null,
+  includeWeekends: false,
+  movingTrade: null,
   lists: { session: SESSIONS, setup: SETUPS, instrument: INSTRUMENTS },
   view: 'list',
   liveStats: null,
@@ -305,6 +310,637 @@ export function bestSetup(trades, minimum = 3) {
   return ranked[0] ?? null;
 }
 
+/* ---------------------------------------------------------- working date -- */
+/*
+ * The date a trade is logged *against*, which is not the date it was typed.
+ *
+ * A backtest replays months of history in an afternoon. Left to the real
+ * clock, every trade lands on today, every trade is #1 of its own day, and
+ * every day-based breakdown becomes noise. The working date is the simulated
+ * calendar; the clock only supplies the time of day.
+ */
+
+const WORKING_DATE_KEY = 'streak.backtest.workingDate';
+const WEEKEND_KEY = 'streak.backtest.includeWeekends';
+
+/** `YYYY-MM-DD` parsed as local midnight, never UTC. */
+export function parseISODate(iso) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso ?? ''));
+  if (!match) return null;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export function toISODate(date) {
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+const isWeekend = (date) => date.getDay() === 0 || date.getDay() === 6;
+
+/**
+ * Moves the working date by whole days, stepping over the weekend unless asked
+ * not to — markets are shut, so a Saturday in a backtest is a day that never
+ * had trades and would sit in the analysis as a false gap.
+ */
+export function shiftWorkingDate(iso, step, { includeWeekends = false } = {}) {
+  const date = parseISODate(iso);
+  if (!date || !step) return iso;
+
+  const direction = step > 0 ? 1 : -1;
+  let remaining = Math.abs(step);
+
+  while (remaining > 0) {
+    date.setDate(date.getDate() + direction);
+    if (includeWeekends || !isWeekend(date)) remaining -= 1;
+  }
+  return toISODate(date);
+}
+
+export const nextWorkingDate = (iso, options) => shiftWorkingDate(iso, 1, options);
+export const previousWorkingDate = (iso, options) => shiftWorkingDate(iso, -1, options);
+
+/**
+ * The stamp written to `traded_at`: the working date's calendar day carrying
+ * the real clock's time, so hour-of-day analysis still has something to read.
+ */
+export function stampFor(iso, clock = new Date()) {
+  const date = parseISODate(iso);
+  if (!date) return clock.toISOString();
+
+  date.setHours(clock.getHours(), clock.getMinutes(), clock.getSeconds(), 0);
+  return date.toISOString();
+}
+
+/** "Tue 9 Jun" — short, and with the weekday, which is the part that matters. */
+export function formatWorkingDate(iso) {
+  const date = parseISODate(iso);
+  if (!date) return '—';
+  return date.toLocaleDateString(undefined, {
+    weekday: 'short', day: 'numeric', month: 'short',
+  });
+}
+
+/** Where a session starts when it has never been opened before. */
+export function defaultWorkingDate(session) {
+  return session?.period_start ?? todayISO();
+}
+
+export function loadWorkingDate(sessionId) {
+  const stored = localStorage.getItem(`${WORKING_DATE_KEY}.${sessionId}`);
+  return parseISODate(stored) ? stored : null;
+}
+
+export function saveWorkingDate(sessionId, iso) {
+  if (parseISODate(iso)) localStorage.setItem(`${WORKING_DATE_KEY}.${sessionId}`, iso);
+}
+
+export function loadIncludeWeekends() {
+  return localStorage.getItem(WEEKEND_KEY) === 'true';
+}
+
+export function saveIncludeWeekends(value) {
+  localStorage.setItem(WEEKEND_KEY, String(value));
+}
+
+/* -------------------------------------------------------------- analysis -- */
+/*
+ * Breakdowns for deriving rules from the log.
+ *
+ * Two rules hold throughout. Every function takes trades in chronological
+ * order and returns `{ rows, n, excluded }`, where `n` is how many trades the
+ * finding actually rests on and `excluded` is how many were dropped for
+ * missing data — because a breakdown that quietly discards half its input is
+ * worse than no breakdown. And nothing here writes: analysis reads the log.
+ */
+
+/** Below this a breakdown is a hint, not a finding. */
+export const THIN_DATA = 20;
+
+/**
+ * A win rate needs several trades before it means anything. One trade at a
+ * position reads as 100% or 0%, which is not a rate — it's a single outcome
+ * wearing a percentage sign.
+ */
+export const MIN_RATE_SAMPLE = 5;
+
+/**
+ * A cap needs several days behind it. Over one day, "the best cap" is just
+ * "stop before the trade that lost" — hindsight, not a rule.
+ */
+export const MIN_CAP_DAYS = 5;
+
+export const EXIT_REASONS = [
+  { value: 'tp', label: 'Target' },
+  { value: 'sl', label: 'Stop' },
+  { value: 'manual', label: 'Manual' },
+  { value: 'breakeven', label: 'Breakeven' },
+  { value: 'timeout', label: 'Timeout' },
+];
+
+export const RATIOS = [1, 1.5, 2, 2.5, 3];
+
+const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+/** When a trade happened, preferring the explicit stamp over the row's birth. */
+function timeOf(trade) {
+  const raw = trade?.traded_at ?? trade?.created_at;
+  if (!raw) return null;
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/** Local calendar day, `YYYY-MM-DD`. Local, because sessions are traded local. */
+export function dayKey(trade) {
+  const date = timeOf(trade);
+  if (!date) return null;
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+export function hourOf(trade) {
+  const date = timeOf(trade);
+  return date ? date.getHours() : null;
+}
+
+/** 0 = Monday, so the working week reads left to right. */
+export function weekdayOf(trade) {
+  const date = timeOf(trade);
+  return date ? (date.getDay() + 6) % 7 : null;
+}
+
+/**
+ * Each trade tagged with its day and its position within that day.
+ *
+ * Prefers the stored `trade_of_day`, falling back to counting through the
+ * sequence — so rows logged before the column existed still analyse, and rows
+ * written since keep the number they were saved with.
+ */
+export function sequenced(trades) {
+  const counter = new Map();
+  return trades.map((trade) => {
+    const day = dayKey(trade);
+    const next = (counter.get(day) ?? 0) + 1;
+    counter.set(day, next);
+    const stored = Number(trade.trade_of_day);
+    return { ...trade, day, n: Number.isFinite(stored) && stored > 0 ? stored : next };
+  });
+}
+
+/** Win rate over decided trades. Breakevens are excluded, as everywhere else. */
+function rateOf(trades) {
+  const wins = trades.filter((t) => t.outcome === 'win').length;
+  const losses = trades.filter((t) => t.outcome === 'loss').length;
+  return wins + losses ? (wins / (wins + losses)) * 100 : null;
+}
+
+function netOf(trades) {
+  return trades.reduce((sum, trade) => sum + num(trade.amount), 0);
+}
+
+function summarise(trades) {
+  return {
+    count: trades.length,
+    wins: trades.filter((t) => t.outcome === 'win').length,
+    losses: trades.filter((t) => t.outcome === 'loss').length,
+    winRate: rateOf(trades),
+    net: netOf(trades),
+    expectancy: trades.length ? netOf(trades) / trades.length : null,
+  };
+}
+
+/** Does the third trade of the day still pay? */
+export function byTradeNumber(trades, maxN = 10) {
+  const seq = sequenced(trades);
+  const groups = new Map();
+
+  for (const trade of seq) {
+    if (trade.n > maxN) continue;
+    if (!groups.has(trade.n)) groups.set(trade.n, []);
+    groups.get(trade.n).push(trade);
+  }
+
+  const rows = [...groups.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([n, list]) => ({ n, ...summarise(list) }));
+
+  const used = rows.reduce((sum, row) => sum + row.count, 0);
+  return { rows, n: used, excluded: seq.length - used };
+}
+
+/**
+ * What the session would have made under a cap of N trades a day.
+ *
+ * Every trade past the cap is simply not taken — the ones before it are
+ * untouched, so this is a filter on the real log rather than a re-simulation.
+ */
+export function capSimulation(trades, maxCap = 10) {
+  const seq = sequenced(trades);
+  const rows = [];
+
+  for (let cap = 1; cap <= maxCap; cap += 1) {
+    const kept = seq.filter((trade) => trade.n <= cap);
+    rows.push({ cap, ...summarise(kept) });
+  }
+
+  const best = rows.reduce(
+    (top, row) => (top === null || row.net > top.net ? row : top),
+    null,
+  );
+
+  // How many days are behind it decides whether `best` is a finding at all.
+  const days = new Set(seq.map((trade) => trade.day)).size;
+  return { rows, best, days, meaningful: days >= MIN_CAP_DAYS, n: seq.length, excluded: 0 };
+}
+
+/** The trade after a win, against the trade after a loss. */
+export function afterOutcome(trades) {
+  const after = { win: [], loss: [] };
+
+  for (let i = 1; i < trades.length; i += 1) {
+    const previous = trades[i - 1].outcome;
+    if (previous === 'win' || previous === 'loss') after[previous].push(trades[i]);
+  }
+
+  const classified = after.win.length + after.loss.length;
+  return {
+    afterWin: summarise(after.win),
+    afterLoss: summarise(after.loss),
+    rows: [
+      { key: 'win', label: 'After a win', ...summarise(after.win) },
+      { key: 'loss', label: 'After a loss', ...summarise(after.loss) },
+    ],
+    n: classified,
+    // The first trade has no predecessor, and a trade after a breakeven
+    // belongs to neither group.
+    excluded: Math.max(trades.length - classified, 0),
+  };
+}
+
+/** Stopping for the day after N losses. `null` means never stopping. */
+export function stopAfterLoss(trades, limits = [1, 2, null]) {
+  const days = new Map();
+  for (const trade of sequenced(trades)) {
+    if (!days.has(trade.day)) days.set(trade.day, []);
+    days.get(trade.day).push(trade);
+  }
+
+  const rows = limits.map((limit) => {
+    const taken = [];
+    for (const day of days.values()) {
+      let losses = 0;
+      for (const trade of day) {
+        // The losing trade that trips the limit is still taken; the stop
+        // applies from the next one.
+        if (limit !== null && losses >= limit) break;
+        taken.push(trade);
+        if (trade.outcome === 'loss') losses += 1;
+      }
+    }
+    return {
+      limit,
+      label: limit === null ? 'Never stop' : `Stop after ${limit}`,
+      ...summarise(taken),
+    };
+  });
+
+  return { rows, n: trades.length, excluded: 0 };
+}
+
+function bucketBy(trades, keyOf, labelOf) {
+  const groups = new Map();
+  let excluded = 0;
+
+  for (const trade of trades) {
+    const key = keyOf(trade);
+    if (key === null) { excluded += 1; continue; }
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(trade);
+  }
+
+  const rows = [...groups.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([key, list]) => ({ key, label: labelOf(key), ...summarise(list) }));
+
+  return { rows, n: trades.length - excluded, excluded };
+}
+
+export function byHour(trades) {
+  return bucketBy(trades, hourOf, (h) => `${String(h).padStart(2, '0')}:00`);
+}
+
+export function byWeekday(trades) {
+  return bucketBy(trades, weekdayOf, (d) => WEEKDAYS[d]);
+}
+
+/** How each exit was reached, and what it paid. */
+export function byExitReason(trades) {
+  const known = new Set(EXIT_REASONS.map((r) => r.value));
+  const result = bucketBy(
+    trades,
+    (t) => (known.has(t.exit_reason) ? t.exit_reason : null),
+    (value) => EXIT_REASONS.find((r) => r.value === value)?.label ?? value,
+  );
+  // Order by the list rather than alphabetically, so target sits beside stop.
+  result.rows.sort(
+    (a, b) => EXIT_REASONS.findIndex((r) => r.value === a.key)
+      - EXIT_REASONS.findIndex((r) => r.value === b.key),
+  );
+  return result;
+}
+
+const mean = (values) => (values.length
+  ? values.reduce((a, b) => a + b, 0) / values.length
+  : null);
+
+/**
+ * A recorded number, or null when it was never recorded.
+ *
+ * `Number(null)` is `0`, and zero is finite — so testing with `Number.isFinite`
+ * alone silently treats an unrecorded excursion as a trade that never moved,
+ * dragging every average towards zero.
+ */
+function recorded(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+/** How far trades ran in favour, and against, before they closed. */
+export function mfeStats(trades) {
+  const usable = trades.filter((t) => recorded(t.mfe) !== null);
+  const pick = (list, field) => mean(
+    list.map((t) => recorded(t[field])).filter((v) => v !== null),
+  );
+
+  const winners = usable.filter((t) => t.outcome === 'win');
+  const losers = usable.filter((t) => t.outcome === 'loss');
+
+  return {
+    rows: [
+      { label: 'Winners', count: winners.length, mfe: pick(winners, 'mfe'), mae: pick(winners, 'mae') },
+      { label: 'Losers', count: losers.length, mfe: pick(losers, 'mfe'), mae: pick(losers, 'mae') },
+    ],
+    n: usable.length,
+    excluded: trades.length - usable.length,
+  };
+}
+
+/**
+ * What each target would have paid, rebuilt from how far trades actually ran.
+ *
+ * A trade whose MFE reached the target is counted as a win at that target; one
+ * whose MAE reached a full R is counted as a stop-out. Trades that did neither
+ * are unresolved and counted separately rather than assumed either way.
+ *
+ * The honest limit: MFE and MAE don't record which came first, so a trade that
+ * reached both could have gone either way. `unresolved` plus that caveat is
+ * why this is a prompt to look, not a verdict.
+ */
+export function ratioSimulation(trades, ratios = RATIOS) {
+  const usable = trades.filter(
+    (t) => recorded(t.mfe) !== null && recorded(t.mae) !== null,
+  );
+
+  const rows = ratios.map((ratio) => {
+    let net = 0;
+    let wins = 0;
+    let losses = 0;
+    let unresolved = 0;
+
+    for (const trade of usable) {
+      const risk = Math.max(num(trade.risk_amount), 0);
+      if (recorded(trade.mfe) >= ratio) { net += risk * ratio; wins += 1; }
+      else if (recorded(trade.mae) >= 1) { net -= risk; losses += 1; }
+      else unresolved += 1;
+    }
+
+    return {
+      ratio,
+      label: `1:${ratio}`,
+      net,
+      wins,
+      losses,
+      unresolved,
+      count: usable.length,
+      winRate: wins + losses ? (wins / (wins + losses)) * 100 : null,
+    };
+  });
+
+  return { rows, n: usable.length, excluded: trades.length - usable.length };
+}
+
+/** The losing streaks: the worst one, and how often each length happened. */
+export function lossRuns(trades) {
+  const counts = new Map();
+  let run = 0;
+  let longest = 0;
+
+  const close = () => {
+    if (run > 0) counts.set(run, (counts.get(run) ?? 0) + 1);
+    run = 0;
+  };
+
+  for (const trade of trades) {
+    if (trade.outcome === 'loss') {
+      run += 1;
+      longest = Math.max(longest, run);
+    } else {
+      // A breakeven ends a losing run without being part of it.
+      close();
+    }
+  }
+  close();
+
+  const rows = [...counts.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([length, count]) => ({ length, count }));
+
+  return { rows, longest, n: trades.length, excluded: 0 };
+}
+
+/* -------------------------------------------------------------- verdicts -- */
+/*
+ * One sentence per panel, in ordinary words.
+ *
+ * Each returns `{ text, tone }`. `tone` is 'plain' when the reading stands,
+ * 'unreliable' when there isn't enough behind it to act on, and 'quiet' when
+ * there is nothing to say yet. A thin sample never gets a confident sentence:
+ * the hedge is part of the finding, not a disclaimer bolted beside it.
+ */
+
+const quiet = (text) => ({ text, tone: 'quiet' });
+const plain = (text) => ({ text, tone: 'plain' });
+
+/** States it plainly above the threshold, tentatively below it. */
+function graded(n, text) {
+  if (n < THIN_DATA) {
+    return {
+      tone: 'unreliable',
+      text: `Only ${n} trade${n === 1 ? '' : 's'} behind this, so treat it as a hint rather than a finding: ${text}`,
+    };
+  }
+  return plain(text);
+}
+
+const money = (value) => formatSignedMoney(value);
+
+export function tradeNumberVerdict(result) {
+  const rows = result.rows;
+  if (!rows.length) return quiet('Nothing logged yet.');
+  if (rows.length === 1) {
+    return quiet('Only one trade per day so far — log a few days with several trades to see whether the later ones hold up.');
+  }
+
+  const first = rows[0];
+  const later = rows.slice(1);
+  const laterNet = later.reduce((sum, row) => sum + row.net, 0);
+
+  if (first.net > 0 && laterNet < 0) {
+    return graded(result.n,
+      `your first trade of the day is your best, and the later ones give back ${money(laterNet)} of it.`);
+  }
+  if (first.net > 0 && laterNet >= 0) {
+    return graded(result.n,
+      `later trades are still paying — nothing here says you should stop after the first.`);
+  }
+  if (first.net <= 0 && laterNet > 0) {
+    return graded(result.n,
+      `your first trade of the day is the weak one, and the later trades make up for it.`);
+  }
+  return graded(result.n,
+    `every position in the day is losing, so the problem isn't when you trade — it's what you're taking.`);
+}
+
+export function capVerdict(result) {
+  if (!result.n) return quiet('Nothing logged yet.');
+
+  if (!result.meaningful) {
+    const days = result.days;
+    return {
+      tone: 'unreliable',
+      text: `Trades on only ${days} day${days === 1 ? '' : 's'} so far. A cap can't mean anything yet — with one trade at each position, the "best" cap just excludes the single worst trade rather than finding a rule. Come back after about ${MIN_CAP_DAYS} days of trading.`,
+    };
+  }
+
+  const uncapped = result.rows[result.rows.length - 1];
+  const best = result.best;
+
+  if (!best || best.cap === uncapped.cap || best.net <= uncapped.net) {
+    return graded(result.n, 'no daily cap would have beaten simply taking every trade.');
+  }
+  return graded(result.n,
+    `capping at ${best.cap} trade${best.cap === 1 ? '' : 's'} a day would have turned ${money(uncapped.net)} into ${money(best.net)}.`);
+}
+
+export function afterOutcomeVerdict(result) {
+  const { afterWin, afterLoss } = result;
+  if (!afterWin.count || !afterLoss.count) {
+    return quiet('Not enough trades yet to compare how you follow a win against how you follow a loss.');
+  }
+  if (afterWin.winRate === null || afterLoss.winRate === null) {
+    return quiet('Not enough decided trades yet to say.');
+  }
+
+  const gap = afterWin.winRate - afterLoss.winRate;
+  if (gap >= 10) {
+    return graded(result.n,
+      `you trade worse straight after a loss — ${Math.round(afterLoss.winRate)}% win rate against ${Math.round(afterWin.winRate)}% after a win.`);
+  }
+  if (gap <= -10) {
+    return graded(result.n,
+      `a loss doesn't shake you — you actually do better after one (${Math.round(afterLoss.winRate)}% against ${Math.round(afterWin.winRate)}%).`);
+  }
+  return graded(result.n,
+    `the last result doesn't change the next one — you trade about the same either way.`);
+}
+
+export function stopVerdict(result) {
+  if (!result.n) return quiet('Nothing logged yet.');
+
+  const never = result.rows.find((row) => row.limit === null);
+  const best = result.rows.reduce(
+    (top, row) => (top === null || row.net > top.net ? row : top),
+    null,
+  );
+
+  if (!best || !never) return quiet('Not enough logged yet to say.');
+
+  // A tie is not a win for stopping. "+$0.00 better off" is technically true
+  // and completely useless.
+  const gain = best.net - never.net;
+  if (best.limit === null || gain <= 0) {
+    return graded(result.n,
+      'stopping early would not have helped — trading through the losses paid at least as well.');
+  }
+  return graded(result.n,
+    `stopping for the day after ${best.limit} loss${best.limit === 1 ? '' : 'es'} would have left you ${money(gain)} better off.`);
+}
+
+export function clockVerdict(result, unit) {
+  const solid = result.rows.filter((row) => row.count >= MIN_RATE_SAMPLE);
+  if (!solid.length) {
+    return quiet(`No single ${unit} has ${MIN_RATE_SAMPLE} trades yet, so there's nothing to compare.`);
+  }
+  if (solid.length === 1) {
+    return quiet(`Only ${solid[0].label} has enough trades to judge so far.`);
+  }
+
+  const best = solid.reduce((top, row) => (row.net > top.net ? row : top), solid[0]);
+  const worst = solid.reduce((low, row) => (row.net < low.net ? row : low), solid[0]);
+  if (best.label === worst.label) {
+    return graded(result.n, `everything lands on ${best.label} so far.`);
+  }
+  return graded(result.n,
+    `${best.label} is your best ${unit} at ${money(best.net)}, and ${worst.label} your worst at ${money(worst.net)}.`);
+}
+
+export function exitVerdict(result) {
+  if (!result.rows.length) {
+    return quiet('No exit reasons recorded yet. Tag a few trades to see whether your manual exits cost you.');
+  }
+
+  const per = (row) => (row.count ? row.net / row.count : null);
+  const target = result.rows.find((row) => row.key === 'tp');
+  const manual = result.rows.find((row) => row.key === 'manual');
+
+  if (!target || !manual) {
+    const top = result.rows.reduce((best, row) => (row.net > best.net ? row : best), result.rows[0]);
+    return graded(result.n, `${top.label.toLowerCase()} exits are where your money comes from so far.`);
+  }
+
+  if (per(manual) < per(target)) {
+    return graded(result.n,
+      `your manual exits pay less than letting the target fill — ${money(per(manual))} a trade against ${money(per(target))}. That's the discipline cost.`);
+  }
+  return graded(result.n,
+    `your manual exits are holding up against your targets — ${money(per(manual))} a trade against ${money(per(target))}.`);
+}
+
+export function excursionVerdict(excursions, ratios) {
+  if (!ratios.n) {
+    return quiet('Record MFE and MAE on a few trades to see whether your target sits in the right place.');
+  }
+
+  const best = ratios.rows.reduce((top, row) => (row.net > top.net ? row : top), ratios.rows[0]);
+  const losers = excursions.rows.find((row) => row.label === 'Losers');
+
+  const near = losers && losers.mfe !== null && losers.mfe >= 1
+    ? ` Your losing trades ran ${losers.mfe.toFixed(1)}R in your favour before turning, so a nearer target would have caught some of them.`
+    : '';
+
+  return graded(ratios.n,
+    `a ${best.label} target would have paid the most, at ${money(best.net)}.${near}`);
+}
+
+export function runsVerdict(result) {
+  if (!result.n) return quiet('Nothing logged yet.');
+  if (result.longest === 0) return quiet('No losing runs yet.');
+
+  return graded(result.n,
+    `your worst run was ${result.longest} losses in a row. Expect that again, and size so it doesn't matter when it happens.`);
+}
+
 /* ------------------------------------------------------------------ data -- */
 
 const SESSION_COLUMNS = `id, profile_id, name, instrument, timeframe,
@@ -312,7 +948,8 @@ const SESSION_COLUMNS = `id, profile_id, name, instrument, timeframe,
   drawdown_trigger, drawdown_unit, risk_reduction, reduction_unit, recovery_mode,
   drawdown_reference,
   reward_ratio, period_start, period_end, notes, status, created_at`;
-const TRADE_COLUMNS = 'id, session_id, outcome, risk_amount, amount, session_tag, setup_tag, note, created_at';
+const TRADE_COLUMNS = `id, session_id, outcome, risk_amount, amount, session_tag,
+  setup_tag, note, traded_at, trade_of_day, exit_reason, mfe, mae, created_at`;
 
 async function fetchSessions() {
   const { data, error } = await supabase
@@ -351,6 +988,7 @@ function show(view) {
   refs.viewList.hidden = view !== 'list';
   refs.viewSession.hidden = view !== 'session';
   refs.viewCompare.hidden = view !== 'compare';
+  refs.viewAnalysis.hidden = view !== 'analysis';
 }
 
 function currentSession() {
@@ -434,6 +1072,11 @@ async function openSession(id) {
     clear(refs.tradeList).append(emptyState({ title: 'Couldn’t load this session', body: error.message }));
     return;
   }
+
+  // Picks up where this session was left, falling back to where it starts.
+  state.includeWeekends = loadIncludeWeekends();
+  state.workingDate = loadWorkingDate(id) ?? defaultWorkingDate(currentSession());
+
   renderSession({ animate: true });
 }
 
@@ -442,6 +1085,7 @@ function renderSession({ animate = false } = {}) {
   if (!session) return renderSessions();
 
   refs.sessionName.textContent = session.name;
+  renderDayBar();
   refs.sessionMeta.textContent =
     `${session.instrument ?? '—'} · ${session.timeframe ?? '—'} · ${formatMoney(session.risk_amount)} a trade`
     + (session.period_start ? ` · ${formatDate(session.period_start)} → ${formatDate(session.period_end ?? session.period_start)}` : '');
@@ -556,6 +1200,49 @@ function announceRiskChange(session, before) {
   );
 }
 
+/* ------------------------------------------------------------- day bar -- */
+
+/** The working date, its weekday, and what has been logged against it. */
+function renderDayBar() {
+  const session = currentSession();
+  if (!session || !state.workingDate) return;
+
+  refs.workingDateLabel.textContent = formatWorkingDate(state.workingDate);
+  refs.workingDateInput.value = state.workingDate;
+  refs.includeWeekends.checked = state.includeWeekends;
+
+  const logged = state.trades.filter((t) => dayKey(t) === state.workingDate).length;
+  refs.workingDateCount.textContent = logged === 0
+    ? 'No trades yet on this day'
+    : `${logged} trade${logged === 1 ? '' : 's'} on this day`;
+}
+
+/** Moves the working date and remembers it against this session. */
+function setWorkingDate(iso, { announce = false } = {}) {
+  if (!parseISODate(iso)) return;
+
+  state.workingDate = iso;
+  saveWorkingDate(state.sessionId, iso);
+  renderDayBar();
+
+  if (announce) {
+    toast(`Now logging against ${formatWorkingDate(iso)}.`, {
+      type: 'info',
+      duration: 1800,
+    });
+  }
+}
+
+function stepDay(direction) {
+  const options = { includeWeekends: state.includeWeekends };
+  setWorkingDate(
+    direction > 0
+      ? nextWorkingDate(state.workingDate, options)
+      : previousWorkingDate(state.workingDate, options),
+    { announce: true },
+  );
+}
+
 function renderTagChips() {
   const build = (mount, list, key) => {
     clear(mount);
@@ -575,6 +1262,23 @@ function renderTagChips() {
   };
   build(refs.sessionTags, state.lists.session, 'session');
   build(refs.setupTags, state.lists.setup, 'setup');
+
+  // Exit reasons are a fixed vocabulary, not a per-profile list, because the
+  // analysis reads specific values out of them.
+  clear(refs.exitTags);
+  for (const reason of EXIT_REASONS) {
+    const active = state.tags.exit === reason.value;
+    refs.exitTags.append(el('button', {
+      class: 'tag-chip',
+      type: 'button',
+      text: reason.label,
+      'aria-pressed': String(active),
+      onclick: () => {
+        state.tags.exit = active ? null : reason.value;
+        renderTagChips();
+      },
+    }));
+  }
 }
 
 /* ---------------------------------------------------------------- logging -- */
@@ -591,6 +1295,18 @@ async function logTrade(outcome) {
   const override = refs.riskOverride.value.trim();
   const note = refs.noteInput.value.trim();
 
+  // Against the working date, not the real one: the whole point of a backtest
+  // is that its calendar is simulated. The clock supplies only the time.
+  const stamp = stampFor(state.workingDate);
+  const soFar = state.trades.filter((t) => dayKey(t) === state.workingDate).length;
+
+  const optional = (input) => {
+    const raw = input.value.trim();
+    if (raw === '') return null;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : null;
+  };
+
   // Resolved here and stored, so editing the session later cannot re-price a
   // trade that has already happened.
   const before = riskFor(session, state.trades);
@@ -605,12 +1321,22 @@ async function logTrade(outcome) {
     session_tag: state.tags.session,
     setup_tag: state.tags.setup,
     note: note || null,
+    traded_at: stamp,
+    trade_of_day: soFar + 1,
+    exit_reason: state.tags.exit,
+    mfe: optional(refs.mfeInput),
+    mae: optional(refs.maeInput),
     created_at: new Date().toISOString(),
   };
 
   state.trades.push(optimistic);
   refs.riskOverride.value = '';
   refs.noteInput.value = '';
+  refs.mfeInput.value = '';
+  refs.maeInput.value = '';
+  // The exit reason is per-trade, unlike the session and setup tags which
+  // usually repeat across a run.
+  state.tags.exit = null;
   renderSession();
 
   try {
@@ -669,6 +1395,7 @@ function renderTrades() {
   const table = el('table', { class: 'table' }, [
     el('thead', {}, el('tr', {}, [
       el('th', { text: '#' }),
+      el('th', { text: 'Date' }),
       el('th', { text: 'Outcome' }),
       el('th', { class: 'align-right', text: 'Result' }),
       el('th', { class: 'align-right', text: 'Risked' }),
@@ -686,6 +1413,11 @@ function renderTrades() {
 
     body.append(el('tr', {}, [
       el('td', { class: 'num num--muted', text: String(number) }),
+      el('td', { class: 'nowrap' }, [
+        el('span', { text: formatWorkingDate(dayKey(trade)) }),
+        // Its place within its own day, which is what the analysis reads.
+        el('span', { class: 'num num--muted day-tag', text: `#${trade.trade_of_day ?? '?'}` }),
+      ]),
       el('td', {}, el('span', { class: `chip chip--${trade.outcome}`, text: trade.outcome })),
       el('td', {
         class: `align-right num ${amount > 0 ? 'num--positive' : amount < 0 ? 'num--negative' : 'num--muted'}`,
@@ -699,6 +1431,13 @@ function renderTrades() {
       el('td', { text: trade.setup_tag ?? '—' }),
       el('td', { class: 'truncate', text: trade.note ?? '—' }),
       el('td', { class: 'align-right' }, el('div', { class: 'row row-end' }, [
+        el('button', {
+          class: 'btn btn--ghost btn--sm',
+          type: 'button',
+          text: 'Move',
+          title: 'Change the date this trade is logged against',
+          onclick: () => openDateModal(trade),
+        }),
         el('button', {
           class: 'btn btn--ghost btn--sm',
           type: 'button',
@@ -717,6 +1456,101 @@ function renderTrades() {
 
   table.append(body);
   refs.tradeList.append(el('div', { class: 'table-wrap' }, table));
+}
+
+function openDateModal(trade) {
+  state.movingTrade = trade.id;
+  showBanner(refs.dateError, null);
+  clearFieldErrors(refs.dateForm);
+
+  const current = dayKey(trade);
+  refs.tradeDate.value = current ?? state.workingDate ?? todayISO();
+  refs.dateContext.textContent =
+    `Currently ${formatWorkingDate(current)}, trade #${trade.trade_of_day ?? '?'} of that day.`;
+
+  refs.dateModal.showModal();
+  refs.tradeDate.focus();
+}
+
+/**
+ * Moves a trade to another day.
+ *
+ * Both days have to be renumbered, not just the new one: pulling the second
+ * trade out of a day leaves the third still calling itself the third, and the
+ * whole trade-number breakdown reads from that field.
+ */
+async function moveTrade(event) {
+  event.preventDefault();
+  showBanner(refs.dateError, null);
+
+  const trade = state.trades.find((t) => t.id === state.movingTrade);
+  if (!trade) return;
+
+  const target = refs.tradeDate.value;
+  if (!parseISODate(target)) {
+    failField(refs.tradeDate, 'Pick a date.');
+    return;
+  }
+
+  const from = dayKey(trade);
+  if (target === from) {
+    refs.dateModal.close();
+    return;
+  }
+
+  const previous = { traded_at: trade.traded_at, trade_of_day: trade.trade_of_day };
+  const clock = new Date(trade.traded_at ?? trade.created_at ?? Date.now());
+
+  trade.traded_at = stampFor(target, clock);
+  const renumbered = renumberDays(from, target);
+  renderSession();
+
+  setBusy(refs.dateSubmit, true, 'Moving…');
+  try {
+    const { error } = await supabase.from('backtest_trades').upsert(renumbered, { onConflict: 'id' });
+    if (error) {
+      logWriteFailure('Move trade', renumbered[0], error);
+      throw new Error(describeError(error, 'Couldn’t move that trade.'));
+    }
+    refs.dateModal.close();
+    toast(`Moved to ${formatWorkingDate(target)}.`, { type: 'success', duration: 2200 });
+  } catch (error) {
+    Object.assign(trade, previous);
+    renumberDays(from, target);
+    renderSession();
+    showBanner(refs.dateError, error.message);
+  } finally {
+    setBusy(refs.dateSubmit, false);
+  }
+}
+
+/**
+ * Renumbers `trade_of_day` on the given days and returns the rows that changed,
+ * ready to upsert. Mutates local state first so the table is right immediately.
+ */
+function renumberDays(...days) {
+  const touched = new Set(days.filter(Boolean));
+  const changed = [];
+
+  for (const day of touched) {
+    const onDay = state.trades
+      .filter((trade) => dayKey(trade) === day)
+      .sort((a, b) => String(a.traded_at ?? a.created_at).localeCompare(String(b.traded_at ?? b.created_at)));
+
+    onDay.forEach((trade, index) => {
+      const n = index + 1;
+      if (trade.trade_of_day === n && !changed.some((row) => row.id === trade.id)) return;
+      trade.trade_of_day = n;
+      changed.push({
+        id: trade.id,
+        session_id: trade.session_id,
+        outcome: trade.outcome,
+        traded_at: trade.traded_at,
+        trade_of_day: n,
+      });
+    });
+  }
+  return changed;
 }
 
 function editTrade(trade) {
@@ -1172,8 +2006,8 @@ function renderCompareTable(chosen) {
       el('th', { class: 'align-right', text: 'Trades' }),
       el('th', { class: 'align-right', text: 'Win rate' }),
       el('th', { class: 'align-right', text: 'Net' }),
-      el('th', { class: 'align-right', text: 'Per trade' }),
-      el('th', { class: 'align-right', text: 'Profit factor' }),
+      attachTipTo(el('th', { class: 'align-right', text: 'Per trade' }), GLOSSARY.expectancy),
+      attachTipTo(el('th', { class: 'align-right', text: 'Profit factor' }), GLOSSARY.profitFactor),
       el('th', { text: 'Best setup' }),
       el('th', { text: 'Best session' }),
     ])),
@@ -1211,6 +2045,398 @@ function renderCompareTable(chosen) {
 }
 
 
+
+/* ------------------------------------------------------- analysis render -- */
+
+/**
+ * What each panel measures, in words someone who doesn't trade could follow.
+ *
+ * Every one says what a good result looks like and what a bad one looks like,
+ * because a chart that tells you nothing about which way is better is just
+ * decoration.
+ */
+const PANEL_HELP = {
+  anNumberMeta: 'Splits your trades by whether they were the first, second, third and so on of that day. Good: the later ones earn about as much as the early ones. Bad: a strong first trade and losses after it — that means you keep trading once your edge is spent.',
+  anCapMeta: 'Replays your real history as if you had stopped after a set number of trades each day. If a low cap makes more than taking everything, over-trading is costing you. It needs several days behind it before the answer means anything.',
+  anAfterMeta: 'Compares the very next trade after a win with the very next trade after a loss. Good: they look about the same. Bad: a much lower win rate after a loss, which usually means chasing it back.',
+  anStopMeta: 'Replays your history as if you had stopped for the rest of the day once you had taken one loss, or two. If stopping earns more than trading on, your bad days are where the damage is done.',
+  anHourMeta: 'Which hours of the day you actually make money in. Good: one or two hours clearly and repeatedly ahead. Bad: no pattern — which means the clock is not your problem.',
+  anWeekdayMeta: 'Which weekdays you make money on. Only worth acting on when one day is clearly different again and again, not just once.',
+  anExitMeta: 'How each trade ended — the target filled, the stop hit, or you closed it by hand. If your manual exits pay less per trade than your targets do, closing early is costing you money.',
+  anMfeMeta: 'Uses how far your trades actually travelled to work out what a bigger or smaller target would have paid. Tells you whether your target is too near, so you leave money behind, or too far, so winners turn around before they reach it.',
+  anRunsMeta: 'How long your losing streaks got, and how often each length happened. The longest run is the one to size for — whatever it was, it will happen again.',
+};
+
+/** Terms that appear in figures rather than titles. */
+const GLOSSARY = {
+  mfe: 'MFE, or maximum favourable excursion: how far a trade travelled in your favour before it closed, counted in R. A trade that ran 2R your way before you closed it for 1R has an MFE of 2 — you were right, and you left half of it behind.',
+  mae: 'MAE, or maximum adverse excursion: how far a trade travelled against you before it closed, counted in R. A high MAE on your winners means you are getting them right but sitting through a lot of pain first.',
+  expectancy: 'Expectancy is what one trade is worth on average, wins and losses counted together. Positive means the average trade makes money. It is the number that matters more than win rate — a 30% win rate can beat a 70% one if the wins are big enough.',
+  profitFactor: 'Profit factor is everything you won divided by everything you lost. Above 1 means you are ahead. 2 means you made two dollars for every one you gave back.',
+  r: 'R is one unit of risk — what you lose if the stop hits. Counting in R instead of money lets you compare trades taken at different sizes.',
+};
+
+/** Hangs the ⓘ explanations on the panels. Runs once, after refs are bound. */
+function mountPanelHelp() {
+  for (const [ref, text] of Object.entries(PANEL_HELP)) {
+    const meta = refs[ref];
+    // The tip belongs beside the title, not beside the sample count.
+    attachTip(meta?.closest('.panel__head')?.querySelector('.panel__label'), text);
+  }
+  attachTip(refs.anAfterMeta?.closest('.panel')?.querySelector('.hint'), GLOSSARY.expectancy);
+}
+
+/** `attachTip` that returns the node, for use inline in an element tree. */
+function attachTipTo(node, text) {
+  attachTip(node, text);
+  return node;
+}
+
+/** The sentence under a chart. Replaces whatever was there. */
+function showVerdict(anchor, verdict) {
+  const panel = anchor?.closest('.panel');
+  if (!panel) return;
+
+  panel.querySelector('.verdict')?.remove();
+  panel.append(el('div', {
+    class: `verdict verdict--${verdict.tone}`,
+  }, [
+    el('span', { 'aria-hidden': 'true', text: verdict.tone === 'plain' ? '→' : '·' }),
+    el('p', { text: verdict.text }),
+  ]));
+}
+
+/**
+ * The sample line every breakdown carries: what it rests on, what it dropped,
+ * and whether that is enough to believe.
+ */
+function renderMeta(node, { n, excluded = 0, missing = 'no data' }) {
+  clear(node);
+  node.append(el('span', { class: 'sample__n', text: `n = ${n}` }));
+
+  if (excluded > 0) {
+    node.append(el('span', {
+      class: 'sample__excluded',
+      text: `${excluded} excluded · ${missing}`,
+    }));
+  }
+  if (n < THIN_DATA) {
+    node.append(el('span', { class: 'pill pill--thin', text: 'Thin data' }));
+  }
+}
+
+/** True when the breakdown has nothing to draw. Leaves an empty state behind. */
+function noRows(result, mount, message) {
+  clear(mount);
+  if (result.rows.length) return false;
+  mount.append(el('p', { class: 'muted', text: message }));
+  return true;
+}
+
+const pct = (value) => (value === null ? '—' : `${Math.round(value)}%`);
+
+function renderAnalysis() {
+  const session = currentSession();
+  if (!session || state.view !== 'analysis') return;
+
+  refs.analysisName.textContent = session.name;
+  const trades = state.trades;
+
+  renderTradeNumber(trades);
+  renderCapSim(trades);
+  renderAfterOutcome(trades);
+  renderStopAfterLoss(trades);
+  renderClockBreakdown(trades);
+  renderExitReasons(trades);
+  renderExcursions(trades);
+  renderLossRuns(trades);
+}
+
+function renderTradeNumber(trades) {
+  const result = byTradeNumber(trades);
+  renderMeta(refs.anNumberMeta, { ...result, missing: 'beyond the tenth of a day' });
+  showVerdict(refs.anNumberMeta, tradeNumberVerdict(result));
+  if (noRows(result, refs.anNumberEmpty, 'No trades logged yet.')) return;
+
+  // A win rate over one trade is 100% or 0% — a single outcome wearing a
+  // percentage sign. Positions that thin are left off the chart rather than
+  // drawn as though they meant something.
+  const solid = result.rows.filter((row) => row.count >= MIN_RATE_SAMPLE);
+  const rateBox = refs.anNumberRate.closest('.chart');
+
+  if (!solid.length) {
+    rateBox.hidden = true;
+    refs.anNumberEmpty.append(el('p', {
+      class: 'muted',
+      text: `Win rate is hidden here until a position has ${MIN_RATE_SAMPLE} trades behind it. `
+        + `Right now the most any position has is ${Math.max(...result.rows.map((r) => r.count))}, `
+        + `so every bar would read 100% or 0% and tell you nothing. The net figures on the right still count.`,
+    }));
+  } else {
+    rateBox.hidden = false;
+    rateBarsChart(refs.anNumberRate, {
+      labels: solid.map((row) => `#${row.n}`),
+      values: solid.map((row) => (row.winRate === null ? 0 : row.winRate)),
+      counts: solid.map((row) => row.count),
+      animate: !drawn.has(refs.anNumberRate),
+    });
+    drawn.add(refs.anNumberRate);
+
+    if (solid.length < result.rows.length) {
+      refs.anNumberEmpty.append(el('p', {
+        class: 'muted',
+        text: `${result.rows.length - solid.length} position${result.rows.length - solid.length === 1 ? ' is' : 's are'} `
+          + `left off the win-rate chart for having under ${MIN_RATE_SAMPLE} trades.`,
+      }));
+    }
+  }
+
+  // Net is a sum, not a rate, so one trade is still a real figure.
+  signedBarChart(refs.anNumberNet, {
+    labels: result.rows.map((row) => `#${row.n}`),
+    values: result.rows.map((row) => Number(row.net.toFixed(2))),
+    counts: result.rows.map((row) => row.count),
+  });
+}
+
+function renderCapSim(trades) {
+  const result = capSimulation(trades);
+  state.capResult = result;
+  renderMeta(refs.anCapMeta, result);
+  showVerdict(refs.anCapMeta, capVerdict(result));
+  if (noRows(result, refs.anCapEmpty, 'No trades logged yet.')) return;
+
+  signedBarChart(refs.anCapChart, {
+    labels: result.rows.map((row) => String(row.cap)),
+    values: result.rows.map((row) => Number(row.net.toFixed(2))),
+    counts: result.rows.map((row) => row.count),
+  });
+  renderCapNote();
+}
+
+/** The slider reads the already-computed table; it recomputes nothing. */
+function renderCapNote() {
+  const result = state.capResult;
+  if (!result) return;
+
+  const cap = Number(refs.anCapSlider.value);
+  const row = result.rows.find((r) => r.cap === cap);
+  refs.anCapValue.textContent = String(cap);
+  if (!row) return;
+
+  const kept = `${row.count} of ${result.n} trades kept · ${formatSignedMoney(row.net)} · `
+    + `${pct(row.winRate)} win rate.`;
+
+  // Naming a "best cap" over a single day would be describing hindsight as a
+  // rule: with one trade at each position, the best cap is only the one that
+  // happens to exclude the worst trade.
+  if (!result.meaningful) {
+    refs.anCapNote.textContent =
+      `${kept} No best cap yet — that needs trades across about ${MIN_CAP_DAYS} days, and this session has ${result.days}.`;
+    return;
+  }
+
+  const best = result.best;
+  const bestNote = best && best.cap !== cap
+    ? ` Best is a cap of ${best.cap}, at ${formatSignedMoney(best.net)}.`
+    : ' That is the best cap in this session.';
+
+  refs.anCapNote.textContent = kept + bestNote;
+}
+
+function renderAfterOutcome(trades) {
+  const result = afterOutcome(trades);
+  renderMeta(refs.anAfterMeta, {
+    ...result,
+    missing: 'first trade, or followed a breakeven',
+  });
+  showVerdict(refs.anAfterMeta, afterOutcomeVerdict(result));
+
+  clear(refs.anAfterStats);
+  for (const row of result.rows) {
+    refs.anAfterStats.append(el('div', { class: 'stat' }, [
+      el('span', { class: 'stat__label', text: row.label }),
+      el('span', { class: 'stat__value num', text: pct(row.winRate) }),
+      el('span', {
+        class: `stat__meta num ${row.net >= 0 ? 'num--positive' : 'num--negative'}`,
+        text: row.expectancy === null
+          ? `${row.count} trades`
+          : `${formatSignedMoney(row.expectancy)} a trade · ${row.count} trades`,
+      }),
+    ]));
+  }
+}
+
+function renderStopAfterLoss(trades) {
+  const result = stopAfterLoss(trades);
+  renderMeta(refs.anStopMeta, result);
+  showVerdict(refs.anStopMeta, stopVerdict(result));
+
+  signedBarChart(refs.anStopChart, {
+    labels: result.rows.map((row) => row.label),
+    values: result.rows.map((row) => Number(row.net.toFixed(2))),
+    counts: result.rows.map((row) => row.count),
+  });
+
+  clear(refs.anStopTable);
+  refs.anStopTable.append(simpleTable(
+    ['Rule', 'Trades', 'Win rate', 'Net'],
+    result.rows.map((row) => [
+      row.label,
+      String(row.count),
+      pct(row.winRate),
+      { money: row.net },
+    ]),
+  ));
+}
+
+function renderClockBreakdown(trades) {
+  const pairs = [
+    [byHour(trades), refs.anHourMeta, refs.anHourRate, refs.anHourNet, refs.anHourEmpty, 'hour'],
+    [byWeekday(trades), refs.anWeekdayMeta, refs.anWeekdayRate, refs.anWeekdayNet, refs.anWeekdayEmpty, 'day'],
+  ];
+
+  for (const [result, meta, rateCanvas, netCanvas, empty, unit] of pairs) {
+    renderMeta(meta, { ...result, missing: 'no timestamp' });
+    showVerdict(meta, clockVerdict(result, unit));
+    if (noRows(result, empty, 'Nothing logged with a timestamp yet.')) continue;
+
+    // Same rule as trade number: a rate needs a sample before it is a rate.
+    const solid = result.rows.filter((row) => row.count >= MIN_RATE_SAMPLE);
+    const rateBox = rateCanvas.closest('.chart');
+    rateBox.hidden = solid.length === 0;
+
+    if (!solid.length) {
+      empty.append(el('p', {
+        class: 'muted',
+        text: `Win rate is hidden until one ${unit} has ${MIN_RATE_SAMPLE} trades behind it. `
+          + `The net figures still count.`,
+      }));
+    } else {
+      rateBarsChart(rateCanvas, {
+        labels: solid.map((row) => row.label),
+        values: solid.map((row) => (row.winRate === null ? 0 : row.winRate)),
+        counts: solid.map((row) => row.count),
+        animate: !drawn.has(rateCanvas),
+      });
+      drawn.add(rateCanvas);
+    }
+
+    signedBarChart(netCanvas, {
+      labels: result.rows.map((row) => row.label),
+      values: result.rows.map((row) => Number(row.net.toFixed(2))),
+      counts: result.rows.map((row) => row.count),
+    });
+  }
+}
+
+function renderExitReasons(trades) {
+  const result = byExitReason(trades);
+  renderMeta(refs.anExitMeta, { ...result, missing: 'no exit reason recorded' });
+  showVerdict(refs.anExitMeta, exitVerdict(result));
+  if (noRows(result, refs.anExitTable, 'No exit reasons recorded yet. Add one when you log a trade.')) return;
+
+  signedBarChart(refs.anExitChart, {
+    labels: result.rows.map((row) => row.label),
+    values: result.rows.map((row) => Number(row.net.toFixed(2))),
+    counts: result.rows.map((row) => row.count),
+  });
+
+  refs.anExitTable.append(simpleTable(
+    ['Exit', 'Trades', 'Share', 'Win rate', 'Net'],
+    result.rows.map((row) => [
+      row.label,
+      String(row.count),
+      `${Math.round((row.count / result.n) * 100)}%`,
+      pct(row.winRate),
+      { money: row.net },
+    ]),
+  ));
+}
+
+function renderExcursions(trades) {
+  const excursions = mfeStats(trades);
+  renderMeta(refs.anMfeMeta, { ...excursions, missing: 'no MFE recorded' });
+
+  clear(refs.anMfeTable);
+  refs.anMfeTable.append(simpleTable(
+    ['', 'Trades', { text: 'Average MFE', tip: GLOSSARY.mfe }, { text: 'Average MAE', tip: GLOSSARY.mae }],
+    excursions.rows.map((row) => [
+      row.label,
+      String(row.count),
+      row.mfe === null ? '—' : `${row.mfe.toFixed(2)}R`,
+      row.mae === null ? '—' : `${row.mae.toFixed(2)}R`,
+    ]),
+  ));
+
+  const ratios = ratioSimulation(trades);
+  showVerdict(refs.anMfeMeta, excursionVerdict(excursions, ratios));
+  const unresolved = ratios.rows.reduce((most, row) => Math.max(most, row.unresolved), 0);
+
+  refs.anRatioNote.textContent = ratios.n === 0
+    ? 'Record MFE and MAE on your trades to rebuild what each target would have paid.'
+    : `Rebuilt from ${ratios.n} trades with both MFE and MAE. A trade counts as a `
+      + `win where MFE reached the target, and a loss where MAE reached 1R. `
+      + `${unresolved > 0 ? `Up to ${unresolved} reached neither and are left out of the totals. ` : ''}`
+      + `MFE and MAE don’t record which came first, so read this as a prompt to look, not a verdict.`;
+
+  if (!ratios.n) {
+    signedBarChart(refs.anRatioChart, { labels: [], values: [], counts: [] });
+    return;
+  }
+  signedBarChart(refs.anRatioChart, {
+    labels: ratios.rows.map((row) => row.label),
+    values: ratios.rows.map((row) => Number(row.net.toFixed(2))),
+    counts: ratios.rows.map((row) => row.wins + row.losses),
+  });
+}
+
+function renderLossRuns(trades) {
+  const result = lossRuns(trades);
+  renderMeta(refs.anRunsMeta, result);
+  showVerdict(refs.anRunsMeta, runsVerdict(result));
+
+  refs.anRunsNote.textContent = result.longest === 0
+    ? 'No losing runs yet.'
+    : `Longest losing run: ${result.longest} in a row. A breakeven ends a run without joining it.`;
+
+  countBarChart(refs.anRunsChart, {
+    labels: result.rows.map((row) => `${row.length} in a row`),
+    values: result.rows.map((row) => row.count),
+    unit: 'run',
+  });
+}
+
+/** A plain table. A cell of `{ money }` is formatted and coloured as currency. */
+function simpleTable(headers, rows) {
+  const table = el('table', { class: 'table' }, [
+    el('thead', {}, el('tr', {}, headers.map((head, i) => {
+      // A header may be a plain string, or `{ text, tip }` to carry an ⓘ.
+      const cell = el('th', {
+        class: i === 0 ? '' : 'align-right',
+        text: typeof head === 'string' ? head : head.text,
+      });
+      if (typeof head === 'object' && head.tip) attachTip(cell, head.tip);
+      return cell;
+    }))),
+  ]);
+
+  const body = el('tbody');
+  for (const row of rows) {
+    body.append(el('tr', {}, row.map((cell, i) => {
+      if (cell !== null && typeof cell === 'object' && 'money' in cell) {
+        return el('td', {
+          class: `align-right num ${cell.money >= 0 ? 'num--positive' : 'num--negative'}`,
+          text: formatSignedMoney(cell.money),
+        });
+      }
+      return el('td', { class: i === 0 ? '' : 'align-right num', text: String(cell) });
+    })));
+  }
+
+  table.append(body);
+  return el('div', { class: 'table-wrap' }, table);
+}
 
 /* ---------------------------------------------------------------- writes -- */
 
@@ -1686,6 +2912,60 @@ export async function initBacktestPage() {
     liveBar: document.getElementById('live-bar'),
     sessionTags: document.getElementById('session-tags'),
     setupTags: document.getElementById('setup-tags'),
+    exitTags: document.getElementById('exit-tags'),
+    prevDay: document.getElementById('prev-day'),
+    nextDay: document.getElementById('next-day'),
+    workingDateLabel: document.getElementById('working-date-label'),
+    workingDateCount: document.getElementById('working-date-count'),
+    workingDateInput: document.getElementById('working-date'),
+    includeWeekends: document.getElementById('include-weekends'),
+    dateModal: document.getElementById('date-modal'),
+    dateForm: document.getElementById('date-form'),
+    dateError: document.getElementById('date-error'),
+    dateContext: document.getElementById('date-context'),
+    tradeDate: document.getElementById('trade-date'),
+    dateSubmit: document.getElementById('date-submit'),
+    dateCancel: document.getElementById('date-cancel'),
+    dateClose: document.getElementById('date-close'),
+    mfeInput: document.getElementById('trade-mfe'),
+    maeInput: document.getElementById('trade-mae'),
+    viewAnalysis: document.getElementById('view-analysis'),
+    openAnalysis: document.getElementById('open-analysis'),
+    analysisBack: document.getElementById('analysis-back'),
+    analysisName: document.getElementById('analysis-name'),
+    anNumberMeta: document.getElementById('an-number-meta'),
+    anNumberRate: document.getElementById('an-number-rate'),
+    anNumberNet: document.getElementById('an-number-net'),
+    anNumberEmpty: document.getElementById('an-number-empty'),
+    anCapMeta: document.getElementById('an-cap-meta'),
+    anCapSlider: document.getElementById('an-cap-slider'),
+    anCapValue: document.getElementById('an-cap-value'),
+    anCapNote: document.getElementById('an-cap-note'),
+    anCapChart: document.getElementById('an-cap-chart'),
+    anCapEmpty: document.getElementById('an-cap-empty'),
+    anAfterMeta: document.getElementById('an-after-meta'),
+    anAfterStats: document.getElementById('an-after-stats'),
+    anStopMeta: document.getElementById('an-stop-meta'),
+    anStopChart: document.getElementById('an-stop-chart'),
+    anStopTable: document.getElementById('an-stop-table'),
+    anHourMeta: document.getElementById('an-hour-meta'),
+    anHourRate: document.getElementById('an-hour-rate'),
+    anHourNet: document.getElementById('an-hour-net'),
+    anHourEmpty: document.getElementById('an-hour-empty'),
+    anWeekdayMeta: document.getElementById('an-weekday-meta'),
+    anWeekdayRate: document.getElementById('an-weekday-rate'),
+    anWeekdayNet: document.getElementById('an-weekday-net'),
+    anWeekdayEmpty: document.getElementById('an-weekday-empty'),
+    anExitMeta: document.getElementById('an-exit-meta'),
+    anExitChart: document.getElementById('an-exit-chart'),
+    anExitTable: document.getElementById('an-exit-table'),
+    anMfeMeta: document.getElementById('an-mfe-meta'),
+    anMfeTable: document.getElementById('an-mfe-table'),
+    anRatioNote: document.getElementById('an-ratio-note'),
+    anRatioChart: document.getElementById('an-ratio-chart'),
+    anRunsMeta: document.getElementById('an-runs-meta'),
+    anRunsNote: document.getElementById('an-runs-note'),
+    anRunsChart: document.getElementById('an-runs-chart'),
     riskOverride: document.getElementById('risk-override'),
     riskLine: document.getElementById('risk-line'),
     stepLine: document.getElementById('step-line'),
@@ -1809,6 +3089,31 @@ function wireControls() {
     }
   });
   refs.undo.addEventListener('click', undoLast);
+  refs.openAnalysis.addEventListener('click', () => {
+    show('analysis');
+    renderAnalysis();
+    window.scrollTo({ top: 0, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+  });
+  refs.analysisBack.addEventListener('click', () => {
+    show('session');
+    renderSession();
+  });
+  refs.anCapSlider.addEventListener('input', renderCapNote);
+  mountPanelHelp();
+
+  refs.nextDay.addEventListener('click', () => stepDay(1));
+  refs.prevDay.addEventListener('click', () => stepDay(-1));
+  refs.workingDateInput.addEventListener('change', () => {
+    setWorkingDate(refs.workingDateInput.value);
+  });
+  refs.includeWeekends.addEventListener('change', () => {
+    state.includeWeekends = refs.includeWeekends.checked;
+    saveIncludeWeekends(state.includeWeekends);
+  });
+
+  refs.dateForm.addEventListener('submit', moveTrade);
+  refs.dateCancel.addEventListener('click', () => refs.dateModal.close());
+  refs.dateClose.addEventListener('click', () => refs.dateModal.close());
   for (const metric of COMPARE_METRICS) {
     refs.metricSelect.append(el('option', { value: metric.key, text: metric.label }));
   }
@@ -1822,14 +3127,19 @@ function wireControls() {
     button.addEventListener('click', () => logTrade(button.dataset.outcome));
   }
 
-  // Keyboard shortcuts for a fast pass: W, L, B, and U to undo.
+  // Keyboard shortcuts for a fast pass: W, L, B to log, U to undo, N and P to
+  // move through the days. N is the one that carries a backtest along.
   document.addEventListener('keydown', (event) => {
     if (state.view !== 'session') return;
     if (event.target.matches('input, textarea, select')) return;
+    if (refs.dateModal.open || refs.newModal.open) return;
+
     const key = event.key.toLowerCase();
     if (key === 'w') logTrade('win');
     else if (key === 'l') logTrade('loss');
     else if (key === 'b') logTrade('breakeven');
     else if (key === 'u') undoLast();
+    else if (key === 'n') stepDay(1);
+    else if (key === 'p') stepDay(-1);
   });
 }
