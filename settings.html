@@ -13,9 +13,9 @@
     href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
     rel="stylesheet" />
 
-  <link rel="stylesheet" href="css/tokens.css?v=29" />
-  <link rel="stylesheet" href="css/base.css?v=29" />
-  <link rel="stylesheet" href="css/components.css?v=29" />
+  <link rel="stylesheet" href="css/tokens.css?v=31" />
+  <link rel="stylesheet" href="css/base.css?v=31" />
+  <link rel="stylesheet" href="css/components.css?v=31" />
 </head>
 
 <body>
@@ -130,6 +130,38 @@
       </form>
     </section>
 
+    <!-- Chat & presence -->
+    <section class="card" aria-labelledby="presence-title">
+      <div class="card__head">
+        <h2 class="card__title" id="presence-title">Chat &amp; presence</h2>
+      </div>
+      <p class="muted">Each profile decides for itself — neither forces the other.</p>
+
+      <div class="settings-panel">
+        <div class="setting-row">
+          <div class="setting-row__text">
+            <span class="setting-row__label" id="presence-status-label">Show my online status</span>
+            <span class="hint">Lets the other profile see when you were last in the app.</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="presence-status" role="switch" aria-labelledby="presence-status-label" />
+            <span class="switch__track"></span>
+          </label>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-row__text">
+            <span class="setting-row__label" id="presence-chat-label">Enable chat</span>
+            <span class="hint">Shows the chat icon in the top bar. Turns off for you, not for them.</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="presence-chat" role="switch" aria-labelledby="presence-chat-label" />
+            <span class="switch__track"></span>
+          </label>
+        </div>
+      </div>
+    </section>
+
     <!-- Appearance -->
     <section class="card" aria-labelledby="appearance-title">
       <div class="card__head">
@@ -148,7 +180,7 @@
   </main>
 
   <script type="module">
-    import { initSettingsPage } from './js/settings.js?v=29';
+    import { initSettingsPage } from './js/settings.js?v=31';
     initSettingsPage();
   </script>
 </body>

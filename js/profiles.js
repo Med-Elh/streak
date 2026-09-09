@@ -11,8 +11,8 @@
  * is dropped and the picker takes over. Supabase stays the source of truth.
  */
 
-import { supabase, describeError } from './supabase.js?v=29';
-import { goTo, PICKER_PAGE } from './auth.js?v=29';
+import { supabase, describeError } from './supabase.js?v=31';
+import { goTo, PICKER_PAGE } from './auth.js?v=31';
 
 const ACTIVE_KEY = 'streak.active_profile';
 
@@ -24,7 +24,7 @@ let activeProfile = null;
 export async function listProfiles() {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, name, avatar_color, exchange_rate, greeting_style, created_at')
+    .select('id, name, avatar_color, exchange_rate, greeting_style, created_at, last_seen, show_online_status, chat_enabled')
     .order('created_at', { ascending: true });
 
   if (error) throw new Error(describeError(error, 'Couldn’t load profiles.'));
@@ -34,7 +34,7 @@ export async function listProfiles() {
 export async function getProfile(id) {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, name, avatar_color, exchange_rate, greeting_style, created_at')
+    .select('id, name, avatar_color, exchange_rate, greeting_style, created_at, last_seen, show_online_status, chat_enabled')
     .eq('id', id)
     .maybeSingle();
 
@@ -48,7 +48,7 @@ export async function createProfile({ name, avatarColor }) {
   const { data, error } = await supabase
     .from('profiles')
     .insert({ name: name.trim(), avatar_color: avatarColor })
-    .select('id, name, avatar_color, exchange_rate, greeting_style, created_at')
+    .select('id, name, avatar_color, exchange_rate, greeting_style, created_at, last_seen, show_online_status, chat_enabled')
     .single();
 
   if (error) {
@@ -86,7 +86,7 @@ export async function updateCurrency(id, { exchangeRate }) {
     .from('profiles')
     .update({ exchange_rate: exchangeRate })
     .eq('id', id)
-    .select('id, name, avatar_color, exchange_rate, greeting_style, created_at')
+    .select('id, name, avatar_color, exchange_rate, greeting_style, created_at, last_seen, show_online_status, chat_enabled')
     .single();
 
   if (error) throw new Error(describeError(error, 'Couldn’t save the currency settings.'));
@@ -102,6 +102,27 @@ export async function updateGreetingStyle(id, greetingStyle) {
     .eq('id', id);
   if (error) throw new Error(describeError(error, 'Couldn’t save the greeting style.'));
   if (activeProfile?.id === id) activeProfile.greeting_style = greetingStyle;
+}
+
+/**
+ * The two toggles under "Chat & presence". Each profile controls its own pair:
+ * whether its activity shows in the other profile's top bar, and whether its
+ * own top bar shows the chat icon.
+ */
+export async function updatePresence(id, { showOnlineStatus, chatEnabled }) {
+  const { data, error } = await supabase
+    .from('profiles')
+    .update({
+      show_online_status: showOnlineStatus,
+      chat_enabled: chatEnabled,
+    })
+    .eq('id', id)
+    .select('id, name, avatar_color, exchange_rate, greeting_style, created_at, last_seen, show_online_status, chat_enabled')
+    .single();
+
+  if (error) throw new Error(describeError(error, 'Couldn’t save those settings.'));
+  if (activeProfile?.id === id) Object.assign(activeProfile, data);
+  return data;
 }
 
 /** Cascades to that profile's habits, finances and trades. */

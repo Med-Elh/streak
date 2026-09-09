@@ -7,24 +7,24 @@
  * near-identical ones.
  */
 
-import { supabase, describeError } from './supabase.js?v=29';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=29';
+import { supabase, describeError } from './supabase.js?v=31';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=31';
 import {
   requireActiveProfile, listProfiles, createProfile, renameProfile,
-  recolorProfile, deleteProfile, updateCurrency, setActiveProfile, updateGreetingStyle,
-} from './profiles.js?v=29';
+  recolorProfile, deleteProfile, updateCurrency, updatePresence, setActiveProfile, updateGreetingStyle,
+} from './profiles.js?v=31';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
   initials, initMoney, setMoneyContext, moneyContext, formatMoney, useCurrency, swatchPicker,
-  setTheme, effectiveTheme, currentTheme, applyProfileTheme,
-} from './ui.js?v=29';
-import { OPTION_KINDS, seedFor } from './constants.js?v=29';
-import { categoryColor, seriesColor } from './charts.js?v=29';
+  setTheme, effectiveTheme, currentTheme, applyProfileTheme, syncChat,
+} from './ui.js?v=31';
+import { OPTION_KINDS, seedFor } from './constants.js?v=31';
+import { categoryColor, seriesColor } from './charts.js?v=31';
 
 import {
   mountGreeting, sessionKey, listGreetings, createGreeting, updateGreeting,
   deleteGreeting, GREETING_STYLES, PERIODS,
-} from './greetings.js?v=29';
+} from './greetings.js?v=31';
 
 const state = {
   profile: null,
@@ -610,6 +610,35 @@ function renderTheme() {
     : `Always ${active}, on this profile.`;
 }
 
+/* ---------------------------------------------------- chat & presence -- */
+
+function renderPresence() {
+  refs.presenceStatus.checked = Boolean(state.profile.show_online_status);
+  refs.presenceChat.checked = Boolean(state.profile.chat_enabled);
+}
+
+/**
+ * Both toggles save together so one trip to the database handles a pair of
+ * taps. The toast names what actually changed.
+ */
+async function savePresence() {
+  const showOnlineStatus = refs.presenceStatus.checked;
+  const chatEnabled = refs.presenceChat.checked;
+  const chatChanged = chatEnabled !== Boolean(state.profile.chat_enabled);
+
+  await guard('Couldn\u2019t save those settings.', async () => {
+    const updated = await updatePresence(state.profile.id, { showOnlineStatus, chatEnabled });
+    state.profile = updated;
+    setActiveProfile(updated);
+    if (chatChanged) syncChat(updated);
+    const bits = [];
+    bits.push(showOnlineStatus ? 'Online status shown.' : 'Online status hidden.');
+    bits.push(chatEnabled ? 'Chat on.' : 'Chat off.');
+    toast(bits.join(' '), { type: 'success', duration: 2000 });
+    return true;
+  });
+}
+
 /* ----------------------------------------------------------------- setup -- */
 
 export async function initSettingsPage() {
@@ -654,12 +683,15 @@ export async function initSettingsPage() {
     greetingStyleFilter: document.getElementById('greeting-style-filter'),
     themeGroup: document.getElementById('theme-group'),
     themeNote: document.getElementById('theme-note'),
+    presenceStatus: document.getElementById('presence-status'),
+    presenceChat: document.getElementById('presence-chat'),
   };
 
   refs.profileHeading.textContent = profile.name;
   refs.rate.value = moneyContext().rate;
   renderRatePreview();
   renderTheme();
+  renderPresence();
 
   const styles = getComputedStyle(document.documentElement);
   state.avatarPalette = Array.from({ length: 8 }, (_, i) =>
@@ -752,6 +784,9 @@ function wireControls() {
   refs.categoryForm.addEventListener('submit', addCategory);
   refs.currencyForm.addEventListener('submit', saveCurrency);
   refs.rate.addEventListener('input', renderRatePreview);
+
+  refs.presenceStatus.addEventListener('change', savePresence);
+  refs.presenceChat.addEventListener('change', savePresence);
 
   refs.themeGroup.addEventListener('click', (event) => {
     const button = event.target.closest('[data-theme-choice]');

@@ -10,21 +10,21 @@
  *    at least one habit was done. Requiring all of them punishes adding a habit.
  */
 
-import { supabase, describeError } from './supabase.js?v=29';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=29';
-import { listProfiles, requireActiveProfile } from './profiles.js?v=29';
+import { supabase, describeError } from './supabase.js?v=31';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=31';
+import { listProfiles, requireActiveProfile } from './profiles.js?v=31';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
   todayISO, formatDate, initials, beat,
   applyProfileTheme,
-} from './ui.js?v=29';
-import { completionChart } from './charts.js?v=29';
+} from './ui.js?v=31';
+import { completionChart } from './charts.js?v=31';
 
 const DAY = 86400000;
 /** Streaks can run long; a year of history is plenty to walk back through. */
 const HISTORY_DAYS = 365;
 
-import { mountGreeting } from './greetings.js?v=29';
+import { mountGreeting } from './greetings.js?v=31';
 
 const state = {
   profile: null,

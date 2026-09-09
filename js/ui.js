@@ -3,7 +3,13 @@
  * Section modules never import each other — anything they share lives here.
  */
 
+import { startPresenceHeartbeat, initPresenceStrip } from './presence.js?v=31';
+import { initChat } from './chat.js?v=31';
+
 const THEME_KEY = 'streak.theme';
+
+/* The active chat instance, so Settings can rebuild it when chat is toggled. */
+let chatHandle = null;
 
 /* ------------------------------------------------------------------ DOM -- */
 
@@ -364,7 +370,10 @@ const NAV = [
 export function topbar({
   profile, current, onSwitchProfile, onSignOut, onCurrencyChange, onThemeChange,
 }) {
-  return el('header', { class: 'topbar' }, [
+  const presenceHost = el('div', { class: 'topbar-presence', role: 'group', 'aria-label': 'Who\u2019s around' });
+  const chatHost = el('div', { class: 'topbar-chat' });
+
+  const header = el('header', { class: 'topbar' }, [
     el('div', { class: 'topbar__inner' }, [
       el('a', { class: 'wordmark', href: 'profiles.html' }, [
         el('b', { text: 'Streak' }),
@@ -383,6 +392,8 @@ export function topbar({
       ),
       el('div', { class: 'spacer' }),
       onCurrencyChange ? currencySwitch(profile, onCurrencyChange) : null,
+      presenceHost,
+      chatHost,
       profile ? themeToggle(profile, onThemeChange) : null,
       profile
         ? el('button', {
@@ -408,6 +419,34 @@ export function topbar({
       }),
     ]),
   ]);
+
+  if (profile) {
+    // Presence and chat are shared widgets: every section page gets them from
+    // the bar without each page knowing they exist.
+    startPresenceHeartbeat(profile.id, toast);
+    initPresenceStrip(presenceHost, profile);
+    chatHandle = initChat({
+      host: chatHost,
+      profile,
+      toastFn: toast,
+      ui: { el, clear, toast, initials },
+    });
+  }
+
+  return header;
+}
+
+/**
+ * Rebuilds the top-bar chat after Settings changes `chat_enabled`. Tearing
+ * the old instance down first means the toggle works on both directions
+ * without a reload — the new instance re-reads the flag from the profile.
+ */
+export function syncChat(profile) {
+  chatHandle?.stop?.();
+  chatHandle = null;
+  const host = document.querySelector('.topbar-chat');
+  if (!host || !profile) return;
+  chatHandle = initChat({ host, profile, toastFn: toast, ui: { el, clear, toast, initials } });
 }
 
 /* Two icons in one button. Only the one for the theme you'd switch *to* is
