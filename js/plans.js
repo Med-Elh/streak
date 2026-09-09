@@ -7,14 +7,14 @@
  * you read.
  */
 
-import { supabase, describeError } from './supabase.js?v=31';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=31';
-import { requireActiveProfile } from './profiles.js?v=31';
+import { supabase, describeError } from './supabase.js?v=32';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=32';
+import { requireActiveProfile } from './profiles.js?v=32';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
   statRing, formatDate, todayISO, applyProfileTheme, beat,
-} from './ui.js?v=31';
-import { mountGreeting } from './greetings.js?v=31';
+} from './ui.js?v=32';
+import { mountGreeting } from './greetings.js?v=32';
 
 export const PLAN_STATUSES = [
   { value: 'active', label: 'Active' },

@@ -1034,6 +1034,15 @@
 .chat-panel__presence { font-size: var(--text-xs); color: var(--text-muted); }
 .chat-panel__avatar { flex-shrink: 0; }
 .chat-panel__close { flex-shrink: 0; }
+.chat-panel__clear { flex-shrink: 0; }
+
+/* The chat's only destructive control: hover turns it red so it reads as
+   "removes everything", unlike the plain close button beside it. */
+.chat-panel__clear:not(:disabled):hover {
+  background: var(--negative-soft);
+  border-color: var(--negative);
+  color: var(--negative);
+}
 
 .chat-panel__tabs {
   display: flex;

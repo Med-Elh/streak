@@ -98,6 +98,7 @@ profiles (
   last_seen     timestamptz,          -- presence heartbeat, written every 2 min
   show_online_status boolean default true,  -- top-bar dot/label shown to others
   chat_enabled  boolean default true, -- top-bar chat icon for this profile
+  can_clear_chats boolean default false, -- owner-only: may clear whole conversations from both sides
   created_at    timestamptz
 )
 
@@ -234,6 +235,7 @@ Views:
 - Every profile writes its own `last_seen` once on load and every 2 minutes while the app is open, and others' last-seen is re-read every 30 seconds.
 - The top bar shows a presence pill per other profile whose `show_online_status` is true: avatar with a green dot when seen within the last 2 minutes, otherwise an "Active 3h ago" label.
 - The chat icon (shown only when the active profile's `chat_enabled` is true) opens a panel that polls every 15 seconds, groups messages by day, sends on Enter, and marks received messages as read while the panel is open and visible. Sent messages show a live read receipt — a single tick until the recipient reads them, then a double tick with the read time. When more than one other profile exists, the panel tabs between conversations.
+- Profiles whose `can_clear_chats` is true (the owner, flagged in SQL — currently `mohamed`) also get a trash button in the panel header. It asks for confirmation, then deletes the whole conversation with that profile in both directions — the other side sees an empty thread on its next poll.
 
 ---
 

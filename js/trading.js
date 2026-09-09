@@ -8,29 +8,29 @@
  * fill you got is not always the fill you planned.
  */
 
-import { supabase, describeError } from './supabase.js?v=31';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=31';
-import { requireActiveProfile } from './profiles.js?v=31';
+import { supabase, describeError } from './supabase.js?v=32';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=32';
+import { requireActiveProfile } from './profiles.js?v=32';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner, statRing,
   formatSignedMoney, compactNumber, signClass, formatDate, todayISO, formatPercent,
   moneyContext, initMoney,
   applyProfileTheme,
-} from './ui.js?v=31';
+} from './ui.js?v=32';
 import {
   equityCurveChart, signedBarChart, rateBarChart,
-} from './charts.js?v=31';
+} from './charts.js?v=32';
 import {
   INSTRUMENTS, SESSIONS, SETUPS, EMOTIONS, DIRECTIONS, OUTCOMES, options, loadOptions,
-} from './constants.js?v=31';
+} from './constants.js?v=32';
 import {
   ACCOUNT_STATUSES, evaluate, groupAccounts, pickAccount,
   listAccounts, createAccount, updateAccount, deleteAccount, setStatus,
   loadSelectedAccountId, saveSelectedAccountId,
   isDismissed, dismiss, clearDismissals, hasBaseline, percentOf,
-} from './accounts.js?v=31';
+} from './accounts.js?v=32';
 
-import { mountGreeting } from './greetings.js?v=31';
+import { mountGreeting } from './greetings.js?v=32';
 
 const state = {
   profile: null,

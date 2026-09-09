@@ -7,13 +7,18 @@
  * Sent messages carry a receipt: a single tick until the recipient reads
  * them, then a double tick with the read time. Text only, no attachments.
  *
+ * For profiles with can_clear_chats (the owner, flagged in SQL), a "Clear
+ * conversation" button in the panel header deletes the whole thread with
+ * the active profile in both directions — both sides see an empty chat
+ * again, within one poll.
+ *
  * When the active profile's chat_enabled is false, or there are no other
  * profiles, the icon is hidden entirely.
  */
 
-import { supabase, describeError } from './supabase.js?v=31';
-import { listProfiles } from './profiles.js?v=31';
-import { isOnline, presenceLabel } from './presence.js?v=31';
+import { supabase, describeError } from './supabase.js?v=32';
+import { listProfiles } from './profiles.js?v=32';
+import { isOnline, presenceLabel } from './presence.js?v=32';
 
 const POLL_MS = 15_000;
 const FIELDS  = 'id, sender_id, recipient_id, body, read_at, created_at';
@@ -58,6 +63,20 @@ async function sendMessage({ senderId, recipientId, body }) {
     .single();
   if (error) throw new Error(describeError(error, "Couldn\u2019t send that message."));
   return data;
+}
+
+/**
+ * Deletes the whole conversation between two profiles — every message in
+ * both directions, so the other side loses its copy too and both start
+ * fresh. Calls are gated client-side by the active profile's
+ * can_clear_chats flag (owner-only by design of the single-account app).
+ */
+async function clearThread(meId, otherId) {
+  const { error } = await supabase
+    .from('messages')
+    .delete()
+    .or(`and(sender_id.eq.${meId},recipient_id.eq.${otherId}),and(sender_id.eq.${otherId},recipient_id.eq.${meId})`);
+  if (error) throw new Error(describeError(error, "Couldn\u2019t clear the conversation."));
 }
 
 /* ---- day helpers ---- */
@@ -131,8 +150,18 @@ export function initChat({ host, profile, toastFn, ui }) {
   const panelAvatar = ui.el('span', { class: 'avatar avatar--sm chat-panel__avatar', 'aria-hidden': 'true' });
   const panelTitle = ui.el('span', { class: 'chat-panel__title' });
   const panelPresence = ui.el('span', { class: 'chat-panel__presence' });
+  const clearButton = ui.el('button', {
+    class: 'btn btn--icon chat-panel__clear',
+    type: 'button',
+    'aria-label': 'Clear conversation',
+    title: 'Clear conversation',
+    onclick: clearConversation,
+  });
+  clearButton.innerHTML = TRASH_SVG;
+
   const panelHead = ui.el('div', { class: 'chat-panel__head' }, [
     ui.el('span', { class: 'chat-panel__who' }, [panelAvatar, ui.el('span', { class: 'chat-panel__head-text' }, [panelTitle, panelPresence])]),
+    profile.can_clear_chats ? clearButton : null,
     ui.el('button', {
       class: 'btn btn--icon chat-panel__close',
       type: 'button',
@@ -313,6 +342,31 @@ export function initChat({ host, profile, toastFn, ui }) {
     state.visible = document.visibilityState === 'visible';
   }, globalListeners);
 
+  /* ---- clear whole conversation (owner profile only) ---- */
+
+  async function clearConversation() {
+    const other = otherOf();
+    if (!other) return;
+    if (!window.confirm(
+      `Clear the chat with ${other.name}?\n\n` +
+      'Every message you both sent is deleted from both sides. This can\'t be undone.',
+    )) return;
+    clearButton.disabled = true;
+    try {
+      await clearThread(profile.id, other.id);
+      state.messages = [];
+      renderThread();
+      // The badge is recounted rather than zeroed: other conversations may
+      // still hold unread messages for this profile.
+      await refresh();
+      toastFn?.(`Conversation with ${other.name} cleared — you both start fresh.`, { type: 'success' });
+    } catch (error) {
+      toastFn?.(error.message, { type: 'error' });
+    } finally {
+      clearButton.disabled = false;
+    }
+  }
+
   /* ---- send ---- */
 
   async function send() {
@@ -378,3 +432,4 @@ export function initChat({ host, profile, toastFn, ui }) {
 const CHAT_SVG = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
 const SINGLE_TICK_SVG = `<svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 8 7 12 13 4"/></svg>`;
 const DOUBLE_TICK_SVG = `<svg viewBox="0 0 20 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 8 5 12 11 4"/><polyline points="6 8 10 12 16 4"/></svg>`;
+const TRASH_SVG = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`;
