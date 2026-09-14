@@ -13,9 +13,9 @@
     href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
     rel="stylesheet" />
 
-  <link rel="stylesheet" href="css/tokens.css?v=32" />
-  <link rel="stylesheet" href="css/base.css?v=32" />
-  <link rel="stylesheet" href="css/components.css?v=32" />
+  <link rel="stylesheet" href="css/tokens.css?v=39" />
+  <link rel="stylesheet" href="css/base.css?v=39" />
+  <link rel="stylesheet" href="css/components.css?v=39" />
 </head>
 
 <body>
@@ -28,7 +28,40 @@
       <button class="btn btn--primary" type="button" id="add-habit">Add habit</button>
     </div>
 
+    <!-- Live progress for today: a filled bar behind the count. The fill width
+         and the count text are both set from renderTodayProgress. Retired at
+         every size now — the ring card below is the read — but it stays in the
+         DOM so the shared numbers pipeline keeps one shape across breakpoints. -->
+    <div class="today-progress today-progress--bar" id="today-progress" role="status" aria-live="polite" hidden>
+      <span class="today-progress__fill" aria-hidden="true"></span>
+      <span class="today-progress__text"></span>
+    </div>
+
     <div id="streak-hero"></div>
+
+    <!-- Progress read: the same numbers as the bar above, drawn as a ring and
+         rendered live by renderTodayProgress. The radius and layout swap at
+         the 768px breakpoint — radius 40 / full width on small screens, radius
+         48 / bounded width on desktop, where the card sits between the streak
+         hero and the habit list. The [hidden] attribute only guards the
+         pre-render moment; renderTodayProgress clears it. -->
+    <div class="today-card" id="today-card" role="status" aria-live="polite" hidden>
+      <div class="today-card__ring" aria-hidden="true">
+        <svg viewBox="0 0 92 92">
+          <circle class="today-card__track" cx="46" cy="46" r="40" />
+          <circle
+            class="today-card__arc"
+            cx="46" cy="46" r="40"
+            stroke-dasharray="251.3"
+            stroke-dashoffset="251.3" />
+        </svg>
+        <span class="today-card__pct">0%</span>
+      </div>
+      <div class="today-card__body">
+        <p class="today-card__message"></p>
+        <p class="today-card__meta"></p>
+      </div>
+    </div>
 
     <section class="stack" aria-labelledby="today-title">
       <h2 class="sr-only" id="today-title">Today’s habits</h2>
@@ -125,7 +158,7 @@
   </dialog>
 
   <script type="module">
-    import { initHabitsPage } from './js/habits.js?v=32';
+    import { initHabitsPage } from './js/habits.js?v=39';
     initHabitsPage();
   </script>
 </body>

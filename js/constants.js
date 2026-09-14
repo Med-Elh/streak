@@ -104,7 +104,7 @@ export function seedFor(kind) {
  * don't. One query for all four kinds.
  */
 export async function loadOptions(profileId) {
-  const { supabase, describeError } = await import('./supabase.js?v=32');
+  const { supabase, describeError } = await import('./supabase.js?v=39');
 
   const { data, error } = await supabase
     .from('profile_options')

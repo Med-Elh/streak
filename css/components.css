@@ -676,6 +676,53 @@
 }
 .toast__close:hover { color: var(--text); }
 
+/* ==========================================================================
+   Confetti — all-habits-done burst
+   Plain DOM <div>s animated in CSS, no library. 35 pieces drop from the top of
+   the viewport at random lefts, spinning as they fall; each is removed when its
+   flight ends via animationend. Colours come from UI tokens (accent orange plus
+   the complementary info/positive tones), never raw hex.
+   ========================================================================== */
+
+.confetti-burst {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: var(--z-modal);
+}
+.confetti-particle {
+  position: absolute;
+  top: -24px;
+  width: 10px;
+  height: 14px;
+  opacity: 1;
+  will-change: transform;
+  animation: confetti-fall var(--fall-duration, 2.2s) var(--ease-in-out) forwards;
+}
+@keyframes confetti-fall {
+  0%   { transform: translate(0, 0) rotate(0deg); }
+  100% { transform: translate(var(--drift), var(--fall)) rotate(var(--spin)); }
+}
+
+/* All-done celebration toast: bottom-centre, reusing the shared .toast look.
+   Enter/leave fade comes from the base .toast rules ([data-leaving]). */
+.celebration-toast {
+  position: fixed;
+  bottom: var(--space-4);
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  width: max-content;
+  max-width: calc(100vw - var(--space-5) * 2);
+  z-index: var(--z-toast);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confetti-burst,
+  .confetti-particle { display: none !important; }
+}
+
 @media (max-width: 480px) {
   .toast-region { left: var(--space-4); right: var(--space-4); width: auto; }
 
@@ -2458,6 +2505,10 @@
 .streak-hero__title { font-family: var(--font-display); font-size: var(--text-lg); }
 .streak-hero__line { color: var(--text-muted); font-size: var(--text-sm); }
 
+/* The today line fades in when its copy changes (see updateHeroLine). */
+.streak-hero__line.is-refreshing { animation: hero-line-in 200ms var(--ease-out); }
+@keyframes hero-line-in { from { opacity: 0; } to { opacity: 1; } }
+
 /* The count pops and the ring flares when a check-in extends the streak. */
 .streak-hero.is-celebrating .streak-hero__count { animation: count-pop 620ms var(--ease-out); }
 .streak-hero.is-celebrating .streak-hero__dial::after {
@@ -2482,6 +2533,119 @@
    Habits — cards
    ========================================================================== */
 
+/* Live progress under the page head: a filled bar behind today's count. The
+   bar is a translucent accent track with a solid accent fill whose width is
+   set from renderTodayProgress; at 100% the fill (and the text on top of it)
+   flip to the positive tone. Scoped behind .today-progress--bar because Tasks
+   shares the .today-progress class for its own, different progress card. */
+.today-progress.today-progress--bar {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 40px;
+  padding: 0;
+  background: rgb(var(--accent-rgb) / 0.2);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.today-progress--bar .today-progress__fill {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 0%;
+  background: var(--accent);
+  transition:
+    width 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.today-progress--bar .today-progress__text {
+  position: relative;
+  color: var(--text);
+  transition: color 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.today-progress--bar[data-complete='true'] .today-progress__fill { background: var(--positive); }
+.today-progress--bar[data-complete='true'] .today-progress__text { color: var(--text-on-accent); }
+/* The ring card is the single progress read at every size, so the pill bar
+   never paints — this retires it on desktop (the 768px block hides it on
+   small screens too). Scoped behind the same class pair the markup uses
+   because Tasks' own progress card shares the bare .today-progress class. */
+.today-progress.today-progress--bar { display: none; }
+
+/* The ring card: the same numbers as the bar, drawn as a ring. On small
+   screens it replaces the bar and the streak hero; on desktop it sits between
+   the hero and the habit list at a bounded width, its accent following the
+   signed-in profile. Radius 48 here (vs 40 on mobile) is written from JS with
+   the matching dash values, so the visible sweep is always exact. */
+.today-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  max-width: 420px;
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  transition: background 0.6s ease;
+}
+/* The finished tint (surface-2 → a soft accent wash) fades in via opacity,
+   which is the one property that transitions cleanly across the layer. */
+.today-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(180deg, rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.08), rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.08));
+  opacity: 0;
+  transition: opacity 0.6s ease;
+  pointer-events: none;
+}
+.today-card[data-complete='true']::before { opacity: 1; }
+
+.today-card__ring {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 112px;
+  height: 112px;
+  flex-shrink: 0;
+}
+.today-card__ring svg { width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
+.today-card__ring circle { fill: none; stroke-width: 8; stroke-linecap: round; }
+.today-card__track { stroke: rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.15); }
+.today-card__arc {
+  stroke: var(--profile-accent, var(--accent));
+  transition: stroke-dashoffset 0.5s ease, stroke 0.6s ease;
+}
+.today-card[data-complete='true'] .today-card__arc { stroke: var(--positive); }
+
+.today-card__pct {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: var(--weight-bold);
+  color: var(--profile-accent, var(--accent));
+  transition: color 0.6s ease;
+}
+.today-card[data-complete='true'] .today-card__pct { color: var(--positive); }
+
+.today-card__body { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.today-card__message {
+  font-family: var(--font-display);
+  font-size: 24px;
+  line-height: var(--leading-snug);
+  color: var(--text);
+}
+.today-card__meta {
+  font-size: 11px;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
 .habit-grid {
   display: grid;
   gap: var(--space-4);
@@ -2503,9 +2667,9 @@
 }
 .habit-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-sm); }
 .habit-card[data-done='true'] {
-  border-color: rgb(var(--accent-rgb) / 0.45);
+  border-color: rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.45);
   background:
-    linear-gradient(180deg, rgb(var(--accent-rgb) / 0.07), transparent 40%),
+    linear-gradient(180deg, rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.07), transparent 40%),
     var(--surface);
 }
 .habit-card.is-celebrating { animation: card-lift 620ms var(--ease-out); }
@@ -2513,6 +2677,35 @@
   0%   { transform: translateY(0) scale(1); }
   30%  { transform: translateY(-4px) scale(1.012); }
   100% { transform: translateY(0) scale(1); }
+}
+
+/* The moment of completing: a quick scale bounce plus a soft green flash that
+   fades to transparent across the card. Unchecking never animates — only
+   completing does. The class is added after the write lands and removed once
+   both keyframes end (see announceCompletion in habits.js). Declared after
+   .is-celebrating so a streak-grow tick plays this instead of the card-lift;
+   the hero count still pops on its own. */
+.habit-card.is-completing {
+  animation:
+    habit-complete-scale 200ms var(--ease-out),
+    habit-complete-flash 400ms var(--ease-out) 200ms;
+}
+@keyframes habit-complete-scale {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
+@keyframes habit-complete-flash {
+  from { background-color: rgb(var(--positive-rgb) / 0.15); }
+  to   { background-color: transparent; }
+}
+/* Reduced motion: skip the bounce, the flash and the fades — the count change
+   alone carries the information, and the bar jumps straight to its width. */
+@media (prefers-reduced-motion: reduce) {
+  .habit-card.is-completing { animation: none; }
+  .streak-hero__line.is-refreshing { animation: none; }
+  .today-progress--bar .today-progress__fill,
+  .today-progress--bar .today-progress__text { transition: none; }
 }
 
 .habit-card__top { display: flex; align-items: flex-start; gap: var(--space-4); }
@@ -2546,7 +2739,7 @@
   font-variant-numeric: tabular-nums;
   font-size: var(--text-lg);
   font-weight: var(--weight-medium);
-  color: var(--accent);
+  color: var(--profile-accent, var(--accent));
 }
 .habit-card[data-streak='0'] .habit-card__streak-num { color: var(--text-faint); }
 .habit-card__streak-unit {
@@ -2574,7 +2767,7 @@
     border-color var(--duration-base) var(--ease-out),
     color var(--duration-base) var(--ease-out);
 }
-.habit-tick:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+.habit-tick:hover:not(:disabled) { border-color: var(--profile-accent, var(--accent)); color: var(--text); }
 .habit-tick__mark {
   display: grid;
   place-items: center;
@@ -2592,12 +2785,12 @@
     transform var(--duration-base) var(--ease-out);
 }
 .habit-card[data-done='true'] .habit-tick {
-  background: rgb(var(--accent-rgb) / 0.1);
+  background: rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.1);
   border-color: transparent;
-  color: var(--accent);
+  color: var(--profile-accent, var(--accent));
 }
 .habit-card[data-done='true'] .habit-tick__mark {
-  background: linear-gradient(160deg, var(--flame-from), var(--flame-to));
+  background: var(--profile-accent, var(--accent));
   border-color: transparent;
   color: var(--text-on-accent);
 }
@@ -3440,4 +3633,257 @@
   gap: var(--space-3);
   font-size: var(--text-xs);
   color: var(--text-faint);
+}
+/* ==========================================================================
+   Habits — mobile (max-width: 768px)
+   ==========================================================================
+   Everything in this block is scoped to small screens. The ring card is the
+   progress read at every size now — its desktop rule lives with the other
+   habit-card styles above, and this block only adjusts its sizes and lets it
+   replace the streak hero here. Habit cards keep their full unfolded columns
+   above 768px. All colours come from the token set — nothing hardcoded. */
+
+@media (max-width: 768px) {
+  /* ---- progress card replaces the bar and the streak hero --------------- */
+
+  /* The arc card carries the same numbers, so the pill bar and the whole
+     streak hero fold away on small screens. The bar is retired at every size
+     (the desktop rule hides it too); this rule — same class pair, same
+     specificity, later in the file — keeps the status quo on small screens.
+     The bare #today-progress id can't be used: Tasks' own progress card
+     reuses that id. */
+  .today-progress.today-progress--bar { display: none; }
+  .streak-hero { display: none; }
+
+  .today-card {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-4);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+    transition: background 0.6s ease;
+  }
+  /* The finished tint (surface-2 → a soft accent wash) fades in via opacity,
+     which is the one property that transitions cleanly across the layer. */
+  .today-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background:
+      linear-gradient(180deg, rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.08), rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.08));
+    opacity: 0;
+    transition: opacity 0.6s ease;
+    pointer-events: none;
+  }
+  .today-card[data-complete='true']::before { opacity: 1; }
+
+  .today-card__ring {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 92px;
+    height: 92px;
+    flex-shrink: 0;
+  }
+  .today-card__ring svg { width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
+  .today-card__ring circle { fill: none; stroke-width: 8; stroke-linecap: round; }
+  .today-card__track { stroke: rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.15); }
+  .today-card__arc {
+    stroke: var(--profile-accent, var(--accent));
+    transition: stroke-dashoffset 0.5s ease, stroke 0.6s ease;
+  }
+  .today-card[data-complete='true'] .today-card__arc { stroke: var(--positive); }
+
+  .today-card__pct {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: var(--weight-bold);
+    color: var(--profile-accent, var(--accent));
+    transition: color 0.6s ease;
+  }
+  .today-card[data-complete='true'] .today-card__pct { color: var(--positive); }
+
+  .today-card__body { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+  .today-card__message {
+    font-family: var(--font-display);
+    font-size: 22px;
+    line-height: var(--leading-snug);
+    color: var(--text);
+  }
+  .today-card__meta {
+    font-size: 11px;
+    letter-spacing: var(--tracking-caps);
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  /* ---- compact habit cards ---------------------------------------------- */
+
+  /* One tight row: icon + name | menu | check | chevron. The details (streak
+     stats, week row, year heatmap) drop to their own full-width grid rows,
+     so the collapsed card is exactly one 56px line. */
+  .habit-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+    align-items: center;
+    /* Tighter than desktop so the fixed icon/menu/check columns leave the
+       flexible middle track — the name — as much room as the row can spare
+       (so its ellipsis only cuts in when the name genuinely can't fit). */
+    column-gap: var(--space-2);
+    row-gap: 0;
+    min-height: 56px;
+    padding: var(--space-2);
+    transition:
+      border-color var(--duration-base) var(--ease-out),
+      transform var(--duration-base) var(--ease-out),
+      box-shadow var(--duration-base) var(--ease-out),
+      row-gap 0.35s ease;
+  }
+  .habit-card.is-expanded { row-gap: var(--space-3); }
+
+  /* Unwrap the top row so icon, name, menu and streak become direct grid
+     items; the five-column template arranges the visible controls. */
+  .habit-card__top { display: contents; }
+  .habit-card__icon { width: 32px; height: 32px; font-size: var(--text-base); }
+  /* The name owns the whole flexible middle track. Flexing it (not the grid
+     item) means it takes every pixel the icon, menu and check leave over,
+     and the ellipsis only cuts in once that track is genuinely full. */
+  .habit-card__meta {
+    grid-column: 2;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+  .habit-card__name {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--text-base);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .habit-card__target { display: none; }
+  .card-menu { grid-column: 3; }
+  .habit-tick {
+    grid-column: 4;
+    justify-self: end;
+    width: auto;
+    min-width: 0;
+    gap: var(--space-2);
+    padding: var(--space-2);
+    white-space: nowrap;
+  }
+  /* The label is the first thing to give way: it ellipsizes while the name
+     keeps its track, and on the very narrowest rows it drops entirely. */
+  .habit-tick > span:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* On small screens every accent-bearing habit surface follows the active
+     profile instead of the fixed orange. These restate the desktop hover and
+     done rules inside this block so they can read the profile variable;
+     the desktop rules themselves are untouched. */
+  .habit-card[data-done='true'] {
+    border-color: rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.45);
+    background:
+      linear-gradient(180deg, rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.07), transparent 40%),
+      var(--surface);
+  }
+  .habit-tick:hover:not(:disabled) {
+    border-color: var(--profile-accent, var(--accent));
+    color: var(--text);
+  }
+  .habit-card[data-done='true'] .habit-tick {
+    background: rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.1);
+    border-color: transparent;
+    color: var(--profile-accent, var(--accent));
+  }
+  .habit-card[data-done='true'] .habit-tick__mark {
+    background: var(--profile-accent, var(--accent));
+    border-color: transparent;
+    color: var(--text-on-accent);
+  }
+
+  @media (max-width: 470px) {
+    /* Cap the check's column so the row's spare width reaches the name
+       instead of the button taking it all. */
+    .habit-card {
+      grid-template-columns: auto minmax(0, 1fr) auto minmax(0, fit-content(140px)) auto;
+    }
+  }
+
+  @media (max-width: 400px) {
+    /* Too tight for words: the check drops its label and becomes the mark. */
+    .habit-tick > span:last-child { display: none; }
+  }
+
+  /* The fold control rides the right edge and spins when the details open. */
+  .habit-card__chevron {
+    grid-column: 5;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--text-muted);
+  }
+  .habit-card__chevron-icon { display: inline-block; transition: transform 0.35s ease; }
+  .habit-card.is-expanded .habit-card__chevron-icon { transform: rotate(180deg); }
+
+  /* Folded details. Each section is its own grid row that slides open with
+     the max-height transition; collapsed they take no space at all. */
+  .habit-card__streak {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    display: flex;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.35s ease;
+  }
+  .week-dots {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.35s ease;
+  }
+  .contrib {
+    grid-column: 1 / -1;
+    grid-row: 4;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.35s ease;
+  }
+  .habit-card.is-expanded .habit-card__streak { max-height: 48px; }
+  .habit-card.is-expanded .week-dots { max-height: 64px; }
+  .habit-card.is-expanded .contrib { max-height: 200px; }
+
+  /* Reduced motion: everything above freezes at its final state. (The global
+     base.css rule already covers this; the list exists to say so here.) */
+  @media (prefers-reduced-motion: reduce) {
+    .today-card,
+    .today-card::before,
+    .today-card__arc,
+    .today-card__pct,
+    .habit-card,
+    .habit-card__chevron-icon,
+    .habit-card__streak,
+    .week-dots,
+    .contrib {
+      transition: none;
+    }
+  }
 }
