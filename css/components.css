@@ -2596,20 +2596,43 @@
   --climb-wave: calc(1100ms * var(--climb-tempo));
 }
 
+/* The scope of the pin. A sticky element can only stay put for as long as its
+   containing block is on screen, so wrapping the band together with exactly
+   the things that should slide under it — the streak and the habit list — is
+   what stops the mountain following you all the way down into the charts.
+   Reach the competition board and the pane ends, the band releases, and the
+   rest of the page gets the screen to itself.
+
+   Restates .stack-lg's gap because it becomes one flex item of the page and
+   would otherwise collapse the spacing between the three things inside it. */
+.today-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
 /* The band is what sticks; the scene inside it keeps its own bounded width.
+   It sits flush under the top bar and everything below it — the streak, the
+   habits, the board, the charts — scrolls up and away underneath.
+
    The background has to be on the band and not the scene, because the scene's
-   sky is transparent — without it the habit list scrolls up through the
-   mountain. Bleeding out to the page gutter and padding it back means the
+   sky is transparent; without it the page would scroll straight through the
+   mountain. Bleeding out to the page gutter and padding it back means that
    background spans the full column rather than leaving two strips of content
-   showing past the edges. */
+   showing past the edges.
+
+   The shadow is the only thing that says "this is a layer, and that content
+   went behind it". A border alone reads as a divider between two things in
+   flow, which is the wrong idea entirely. */
 .climb-band {
   position: sticky;
   top: var(--topbar-height);
   z-index: 3;
   margin-inline: calc(var(--page-gutter) * -1);
-  padding: var(--space-2) var(--page-gutter);
+  padding: var(--space-2) var(--page-gutter) var(--space-3);
   background: var(--bg);
   border-bottom: var(--border-width) solid var(--border-subtle);
+  box-shadow: var(--shadow-sm);
 }
 
 .climb {
@@ -2672,39 +2695,100 @@
 }
 
 .climb__figure {
-  fill: none;
-  stroke: var(--profile-accent, var(--accent));
-  /* Heavier than it looks like it needs to be: at 480px wide the scene renders
-     one user unit to about 1.2px, and a 2-unit limb reads as a hairline. */
-  stroke-width: 2.4;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.climb__head {
-  fill: var(--profile-accent, var(--accent));
-  stroke: none;
+
+/* Fur, and the strokes that are limbs and tail. The stroke width is what gives
+   the cat its chunk — thin limbs under a round body read as a spider. */
+.climb__body,
+.climb__head,
+.climb__ear { fill: var(--cat-fur); }
+.climb__leg,
+.climb__arm,
+.climb__tail {
+  fill: none;
+  stroke: var(--cat-fur);
 }
+.climb__leg { stroke-width: 5.5; }
+.climb__arm { stroke-width: 5; }
+.climb__tail { stroke-width: 5.5; }
+.climb__tail-tip {
+  fill: none;
+  stroke: var(--cat-light);
+  stroke-width: 5.5;
+}
+/* Drawn after the white tip, so the grey bites back into it. */
+.climb__tail-teeth { fill: var(--cat-fur); }
 
-/* Each limb rotates about its own joint. SVG has no way to say "rotate about
-   the point this path starts from", so every limb is drawn with its joint at a
-   corner of its own fill box and the origin is written as that corner. Change a
-   limb's `d` and its origin has to be recomputed with it — the pairs are:
-     leg-back   M 0 -9  L -5 0    joint is the box's top right
-     leg-front  M 0 -9  L  5 0    joint is the box's top left
-     arm-back   M 0 -18 L -8 -27  joint is the box's bottom right
-     arm-front  M 0 -18 L  8 -12  joint is the box's top left
+/* Muzzle, chest and paws. --cat-light and not --surface, because --surface is
+   #171a23 in dark mode and she would have black paws. */
+.climb__paw,
+.climb__muzzle,
+.climb__chest { fill: var(--cat-light); }
 
-   The arms are longer than they look like they need to be. At the first
-   length a raised arm ended level with the head and the two merged into one
-   blob — a cheer has to clear the head to read as a cheer. */
+/* Inner ears take the profile's colour: rose for aya, which is the pink a cat
+   ought to have anyway, periwinkle for mohamed. Held at 0.6 so it reads as
+   skin showing through fur rather than as paint. */
+.climb__ear-inner { fill: rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.6); }
+
+/* Features, all in one ink so the face reads as drawn rather than assembled. */
+.climb__eye { fill: var(--cat-light); }
+.climb__pupil,
+.climb__nose { fill: var(--cat-line); }
+.climb__brow,
+.climb__mouth,
+.climb__whiskers {
+  fill: none;
+  stroke: var(--cat-line);
+}
+/* Two short lines per mitt. At this size they are the only thing that says
+   paw rather than lob, so they are drawn in fur, not ink — full ink
+   turned each paw into a domino. */
+.climb__toes {
+  fill: none;
+  stroke: var(--cat-fur);
+  stroke-width: 0.9;
+  opacity: 0.85;
+}
+.climb__brow { stroke-width: 2.3; }
+.climb__mouth { stroke-width: 1.6; }
+.climb__whiskers { stroke-width: 1.2; opacity: 0.7; }
+
+/* The mark of a profile flagged female in applyProfileAccent. A bow, because
+   the figure is a cat now — the hair and skirt that used to do this job
+   belonged to a stick figure and make no sense on an animal. */
+.climb__bow {
+  display: none;
+  fill: var(--profile-accent, var(--accent));
+}
+body[data-figure='female'] .climb__bow { display: block; }
+
+/* Each limb rotates about its own shoulder or hip. SVG has no way to say
+   "rotate about the point this path starts from", so every limb group is drawn
+   so that its joint falls on a corner of its own fill box, and the origin names
+   that corner. The boxes are the union of the limb stroke's geometry and its
+   paw, worked out from the coordinates in habits.html:
+
+     leg-back   joint (-3,-9)   box x[-11.1,-3.0] y[-9.0, 0.0]   -> 100%   0%
+     leg-front  joint ( 3,-9)   box x[  3.0,11.1] y[-9.0, 0.0]   ->   0%   0%
+     arm-back   joint (-3,-17)  box x[-13.2,-3.0] y[-17.0,-8.4]  -> 100%   0%
+     arm-front  joint ( 4,-17)  box x[  4.0,19.0] y[-34.0,-17.0] ->   0% 100%
+
+   The arms bend, so their exact boxes depend on the curve, not just the end
+   points. What keeps the origins on clean corners is that each joint is still
+   the extreme point of its group in both axes — the arm curves away from it and
+   never doubles back past it. Move a joint, resize a paw, or let a control
+   point cross the joint, and these have to be derived again or the limb will
+   pivot about the wrong point and swing out of its socket. */
 .climb__limb { transform-box: fill-box; }
 .climb__limb--leg-back  { transform-origin: 100% 0%; }
 .climb__limb--leg-front { transform-origin: 0% 0%; }
-.climb__limb--arm-back  { transform-origin: 100% 100%; }
-.climb__limb--arm-front { transform-origin: 0% 0%; }
+.climb__limb--arm-back  { transform-origin: 100% 0%; }
+.climb__limb--arm-front { transform-origin: 0% 100%; }
 
 /* Nothing here runs on idle. A figure that breathes forever in the corner of a
-   habit tracker is a distraction and a battery cost; he moves when something
+   habit tracker is a distraction and a battery cost; she moves when something
    happens and rests the rest of the time. */
 .climb__figure.is-climbing .climb__limb--leg-back  { animation: climb-swing-back  var(--climb-step) var(--ease-in-out) infinite; }
 .climb__figure.is-climbing .climb__limb--leg-front { animation: climb-swing-front var(--climb-step) var(--ease-in-out) infinite; }
@@ -2755,10 +2839,13 @@
    up-and-left (it's the reaching arm), so it only needs about a third of a
    turn to stand upright — rotating it further swings it across the body and
    puts both arms on the same side, which reads as a stumble, not a cheer. */
+/* The back arm hangs down-left at rest (140 degrees), so raising it into the
+   cheer is most of a quarter turn clockwise — at 78 degrees it points up-left,
+   which is the other half of the V. */
 @keyframes cheer-arm-back {
   0%   { rotate: 0deg; }
-  24%  { rotate: 18deg; }
-  70%  { rotate: 14deg; }
+  24%  { rotate: 88deg; }
+  70%  { rotate: 80deg; }
   100% { rotate: 0deg; }
 }
 /* The front arm does the work: out and up into the V, in toward the face,
@@ -2769,12 +2856,15 @@
    A straight two-point limb can't actually fold a hand to a mouth; it always
    overshoots the head. The kiss reads from the sequence and the heart, not
    from the anatomy, so the arm only has to swing inward and then snap out. */
+/* The near forearm rests at the chest, pointing down and forward at about 49
+   degrees below horizontal, so every angle here is measured from there.
+   Straight up is -134 from that rest, not -90. */
 @keyframes cheer-arm-front {
   0%   { rotate: 0deg; }
-  24%  { rotate: -82deg; }    /* up into the V, clear of the head */
-  52%  { rotate: -82deg; }
-  66%  { rotate: -150deg; }   /* in toward the face */
-  78%  { rotate: -40deg; }    /* thrown wide — the kiss leaves here */
+  24%  { rotate: -134deg; }   /* punched straight up */
+  52%  { rotate: -134deg; }
+  66%  { rotate: -169deg; }   /* in toward the muzzle */
+  78%  { rotate: -54deg; }    /* thrown wide — the kiss leaves here */
   100% { rotate: 0deg; }
 }
 
@@ -2784,13 +2874,15 @@
 .climb__figure.is-waving .climb__limb--arm-front {
   animation: climb-wave var(--climb-wave) var(--ease-in-out);
 }
+/* Same shift as the cheer: measured from the chest-height rest, so the wave
+   still swings around vertical. */
 @keyframes climb-wave {
   0%   { rotate: 0deg; }
-  18%  { rotate: -104deg; }
-  38%  { rotate: -76deg; }
-  56%  { rotate: -112deg; }
-  74%  { rotate: -78deg; }
-  88%  { rotate: -100deg; }
+  18%  { rotate: -144deg; }
+  38%  { rotate: -122deg; }
+  56%  { rotate: -152deg; }
+  74%  { rotate: -124deg; }
+  88%  { rotate: -140deg; }
   100% { rotate: 0deg; }
 }
 
@@ -2917,31 +3009,6 @@
   :root[data-motion='system'] .climb__figure,
   :root[data-motion='system'] .climb__figure .climb__limb { animation: none; }
   :root[data-motion='system'] .climb__say { scale: 1; }
-}
-
-/* The habit list scrolls inside itself so the pinned mountain above can stay
-   put, but it deliberately does NOT set overscroll-behavior: contain. Contain
-   would trap the gesture: reach the bottom of the list and scrolling simply
-   stops, leaving the board and the charts below unreachable without finding a
-   gap to swipe in. Letting it chain means one continuous gesture runs the list
-   to its end and then carries on down the page, which is what a bounded list
-   inside a longer page should do. The mountain stays put through all of it —
-   it's sticky, so page scroll doesn't move it anyway.
-
-   The negative margin against the padding is so a card's hover lift, its
-   shadow and its focus ring have somewhere to go; overflow would otherwise
-   clip all three flush against the edge. */
-.habit-scroll {
-  max-height: min(58dvh, 620px);
-  overflow-y: auto;
-  padding: var(--space-2);
-  margin: calc(var(--space-2) * -1);
-  scroll-padding-block: var(--space-4);
-}
-.habit-scroll:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
 }
 
 .habit-grid {

@@ -13,9 +13,9 @@
     href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
     rel="stylesheet" />
 
-  <link rel="stylesheet" href="css/tokens.css?v=41" />
-  <link rel="stylesheet" href="css/base.css?v=41" />
-  <link rel="stylesheet" href="css/components.css?v=41" />
+  <link rel="stylesheet" href="css/tokens.css?v=42" />
+  <link rel="stylesheet" href="css/base.css?v=42" />
+  <link rel="stylesheet" href="css/components.css?v=42" />
 </head>
 
 <body>
@@ -35,107 +35,212 @@
          same moment, just not drawn. Written by renderTodayProgress. -->
     <p class="sr-only" id="today-progress" role="status" aria-live="polite"></p>
 
-    <div id="streak-hero"></div>
+    <!-- Everything inside this pane passes behind the mountain; everything
+         after it does not. A sticky element's containing block is its parent,
+         so wrapping the band with exactly the things that should scroll under
+         it — the streak and the habit list — is what scopes the pin. Reach the
+         competition board and the mountain releases and scrolls away, because
+         the board and the charts are things you look at properly rather than
+         glance at while ticking. -->
+    <div class="today-pane">
+      <!-- The climb: today's progress read as height, and the only visual read
+           of it since the percentage ring was retired. The mountain and the flag
+           are static; renderClimb writes the route's `d` and the climber's
+           transform from the CLIMB_PATH waypoints in habits.js, so the dotted
+           line and the steps can never disagree.
 
-    <!-- The climb: today's progress read as height, and the only visual read
-         of it since the percentage ring was retired. The mountain and the flag
-         are static; renderClimb writes the route's `d` and the climber's
-         transform from the CLIMB_PATH waypoints in habits.js, so the dotted
-         line and the steps can never disagree.
+           aria-hidden because a drawing of a man on a hill announces nothing
+           useful — the spoken read is the live region above. The band around it
+           is what sticks under the top bar; the [hidden] attribute on the scene
+           only covers the pre-render moment. -->
+      <div class="climb-band">
+        <div class="climb" id="climb" hidden>
+          <svg class="climb__scene" viewBox="0 0 400 200" aria-hidden="true" focusable="false">
+            <!-- Depth, back to front: a distant range that only shows where the
+                 main massif is low, then the massif itself, then the planes that
+                 give it volume. Both silhouettes run to the bottom edge, so
+                 neither floats above a horizon line.
 
-         aria-hidden because a drawing of a man on a hill announces nothing
-         useful — the spoken read is the live region above. The band around it
-         is what sticks under the top bar; the [hidden] attribute on the scene
-         only covers the pre-render moment. -->
-    <div class="climb-band">
-    <div class="climb" id="climb" hidden>
-      <svg class="climb__scene" viewBox="0 0 400 200" aria-hidden="true" focusable="false">
-        <!-- Depth, back to front: a distant range that only shows where the
-             main massif is low, then the massif itself, then the planes that
-             give it volume. Both silhouettes run to the bottom edge, so
-             neither floats above a horizon line.
+                 The massif's west ridge is benched rather than straight — each
+                 rise-and-flatten is what stops a long approach reading as a ramp,
+                 and it gives the climb visible stages. Light comes from the upper
+                 left throughout: every plane below is a triangle that shares two
+                 of its points with the ridge above it, which is what keeps them
+                 reading as faces of one mountain instead of shapes laid on top. -->
+            <path class="climb__range"
+              d="M 0 200 L 0 168 L 34 138 L 58 158 L 92 128 L 124 152 L 158 122
+                 L 190 150 L 222 132 L 258 156 L 292 130 L 326 150 L 360 126
+                 L 400 148 L 400 200 Z" />
 
-             The massif's west ridge is benched rather than straight — each
-             rise-and-flatten is what stops a long approach reading as a ramp,
-             and it gives the climb visible stages. Light comes from the upper
-             left throughout: every plane below is a triangle that shares two
-             of its points with the ridge above it, which is what keeps them
-             reading as faces of one mountain instead of shapes laid on top. -->
-        <path class="climb__range"
-          d="M 0 200 L 0 168 L 34 138 L 58 158 L 92 128 L 124 152 L 158 122
-             L 190 150 L 222 132 L 258 156 L 292 130 L 326 150 L 360 126
-             L 400 148 L 400 200 Z" />
+            <path class="climb__mountain"
+              d="M 0 200 L 0 178 L 46 150 L 74 156 L 112 124 L 140 130 L 176 96
+                 L 208 104 L 238 70 L 262 76 L 288 40 L 300 26 L 316 56 L 332 96
+                 L 348 120 L 372 158 L 400 186 L 400 200 Z" />
 
-        <path class="climb__mountain"
-          d="M 0 200 L 0 178 L 46 150 L 74 156 L 112 124 L 140 130 L 176 96
-             L 208 104 L 238 70 L 262 76 L 288 40 L 300 26 L 316 56 L 332 96
-             L 348 120 L 372 158 L 400 186 L 400 200 Z" />
+            <!-- The whole east face, in shadow, sharing the silhouette exactly.
+                 Its inner edge runs from the apex down to (262,200) — a spur ridge
+                 coming toward the viewer. Closing it straight down from the apex
+                 instead drew a dead vertical seam through the middle of the
+                 mountain, which is the one thing that gave the scene away. -->
+            <path class="climb__shade"
+              d="M 300 26 L 316 56 L 332 96 L 348 120 L 372 158 L 400 186 L 400 200 L 262 200 Z" />
 
-        <!-- The whole east face, in shadow, sharing the silhouette exactly.
-             Its inner edge runs from the apex down to (262,200) — a spur ridge
-             coming toward the viewer. Closing it straight down from the apex
-             instead drew a dead vertical seam through the middle of the
-             mountain, which is the one thing that gave the scene away. -->
-        <path class="climb__shade"
-          d="M 300 26 L 316 56 L 332 96 L 348 120 L 372 158 L 400 186 L 400 200 L 262 200 Z" />
+            <!-- The west facet under the summit, catching the light. It stops
+                 short of the spur so it never overlaps the shadow. -->
+            <path class="climb__lit" d="M 300 26 L 288 40 L 262 76 L 278 100 L 292 54 Z" />
 
-        <!-- The west facet under the summit, catching the light. It stops
-             short of the spur so it never overlaps the shadow. -->
-        <path class="climb__lit" d="M 300 26 L 288 40 L 262 76 L 278 100 L 292 54 Z" />
+            <!-- The silhouette, as an open path over the fill rather than a stroke
+                 on it. A stroked closed shape also draws its own base along the
+                 bottom of the frame, which reads as a shelf the mountain is
+                 standing on. This traces the skyline only. -->
+            <path class="climb__outline"
+              d="M 0 178 L 46 150 L 74 156 L 112 124 L 140 130 L 176 96 L 208 104
+                 L 238 70 L 262 76 L 288 40 L 300 26 L 316 56 L 332 96 L 348 120
+                 L 372 158 L 400 186" />
 
-        <!-- The silhouette, as an open path over the fill rather than a stroke
-             on it. A stroked closed shape also draws its own base along the
-             bottom of the frame, which reads as a shelf the mountain is
-             standing on. This traces the skyline only. -->
-        <path class="climb__outline"
-          d="M 0 178 L 46 150 L 74 156 L 112 124 L 140 130 L 176 96 L 208 104
-             L 238 70 L 262 76 L 288 40 L 300 26 L 316 56 L 332 96 L 348 120
-             L 372 158 L 400 186" />
+            <!-- d is written by renderClimb from CLIMB_PATH. -->
+            <path class="climb__route" />
 
-        <!-- d is written by renderClimb from CLIMB_PATH. -->
-        <path class="climb__route" />
+            <g class="climb__flag">
+              <line class="climb__flag-pole" x1="308" y1="34" x2="308" y2="8" />
+              <path class="climb__flag-cloth" d="M 308 9 L 330 15.5 L 308 22 Z" />
+            </g>
 
-        <g class="climb__flag">
-          <line class="climb__flag-pole" x1="308" y1="34" x2="308" y2="8" />
-          <path class="climb__flag-cloth" d="M 308 9 L 330 15.5 L 308 22 Z" />
-        </g>
+            <!-- The climber. Paws rest on y = 0, so the parent group's
+                 translate is simply a point on the route and she stands on it.
+                 She faces right, toward the summit, and leans into the hill:
+                 the head sits ahead of the body's centre, the front leg is
+                 planted forward and the front fist is already up.
 
-        <!-- Feet at the origin, so the group's translate is a point on the
-             route and the figure stands on it. The inner figure holds the
-             bob and the limbs; see .climb__limb for why each joint's
-             transform-origin is written as a percentage. -->
-        <g class="climb__climber" style="transform: translate(40px, 178px)">
-          <g class="climb__figure">
-            <path class="climb__limb climb__limb--leg-back"  d="M 0 -9 L -5 0" />
-            <path class="climb__limb climb__limb--arm-back"  d="M 0 -18 L -8 -27" />
-            <path class="climb__torso" d="M 0 -18 L 0 -9" />
-            <circle class="climb__head" cx="0" cy="-22.5" r="3.6" />
-            <path class="climb__limb climb__limb--leg-front" d="M 0 -9 L 5 0" />
-            <path class="climb__limb climb__limb--arm-front" d="M 0 -18 L 8 -12" />
-          </g>
-        </g>
+                 The whole cat is about 37 x 41 units, which at the scene's
+                 rendered width lands near 40 x 50px on the path — big enough
+                 for the scowl and the fist to read, small enough not to own
+                 the mountain.
 
-        <g class="climb__burst"></g>
-        <g class="climb__hearts"></g>
-      </svg>
+                 Drawing order is painting order: tail, the limbs that sit
+                 behind the body, the ears (so the head hides their roots), the
+                 body, the head and its features, then the two front limbs over
+                 the top.
 
-      <!-- What he says. Positioned in pixels from JS against the scene's own
-           box, so it rides the same curve the climber does. -->
-      <p class="climb__say" id="climb-say" aria-hidden="true"></p>
-    </div>
-    </div>
+                 Each limb is a <g> rather than a path because it carries both
+                 fur and a light paw. The rotation origins in components.css
+                 are derived from these exact coordinates, so moving a joint
+                 means re-deriving its origin there. -->
+            <g class="climb__climber" style="transform: translate(40px, 178px)">
+              <g id="climber" class="climb__figure">
+                <!-- The tail is two strokes that meet at exactly the same
+                     point, so the white tip continues the grey rather than
+                     sitting beside it, plus a row of grey teeth over the
+                     join. That jagged grey-into-white edge is the thing that
+                     makes a cartoon tail read as fur instead of as a pipe. -->
+                <path class="climb__tail"
+                  d="M -5.5 -11.5 C -12 -12.5 -16.5 -17 -16.6 -22" />
+                <path class="climb__tail-tip"
+                  d="M -16.6 -22 C -16.7 -25.6 -15.4 -27.8 -13.4 -28.6" />
+                <path class="climb__tail-teeth"
+                  d="M -19.1 -19.2 L -18.1 -22 L -17 -19.2 L -15.9 -22
+                     L -14.9 -19.2 L -14.1 -21.6 L -14.1 -19.2 Z" />
 
-    <!-- The habit list scrolls inside itself so the mountain above can stay
-         put, but the gesture still chains to the page at either end — run out
-         of habits and the same swipe carries on into the board and the charts.
-         Labelled and focusable so a keyboard can reach the scroll region like
-         any other. -->
-    <section class="stack" aria-labelledby="today-title">
-      <h2 class="sr-only" id="today-title">Today’s habits</h2>
-      <div class="habit-scroll" id="habit-scroll" tabindex="0" role="group" aria-labelledby="today-title">
-        <div id="today-list"></div>
+                <g class="climb__limb climb__limb--leg-back">
+                  <path class="climb__leg" d="M -3 -9 L -6.5 -3.5" />
+                  <ellipse class="climb__paw" cx="-7.5" cy="-2.4" rx="3.6" ry="2.4" />
+                  <path class="climb__toes" d="M -8.6 -3.6 L -8.6 -2.2 M -6.6 -3.6 L -6.6 -2.2" />
+                </g>
+                <!-- Both forearms come up to the chest, the way a cat holds
+                     them when it's creeping. The arms are bent rather than
+                     straight: the joint is still the shoulder, it is just no
+                     longer a stick. Each joint stays the extreme point of its
+                     own group in both axes, which is what keeps the rotation
+                     origins on clean corners even though the paths curve. -->
+                <g class="climb__limb climb__limb--arm-back">
+                  <path class="climb__arm" d="M -2 -17 C -6 -16 -7.5 -14 -7 -11.8" />
+                  <ellipse class="climb__paw" cx="-7" cy="-10.4" rx="3" ry="2.7" />
+                  <path class="climb__toes" d="M -8 -12.2 L -8 -10.6 M -6 -12.2 L -6 -10.6" />
+                </g>
+
+                <path class="climb__ear" d="M -5 -32 L -7.6 -41 L 1 -35 Z" />
+                <path class="climb__ear-inner" d="M -4.4 -32.6 L -6.2 -38.6 L -0.6 -34.8 Z" />
+                <path class="climb__ear" d="M 6 -34 L 10.6 -41.4 L 12.6 -32.6 Z" />
+                <path class="climb__ear-inner" d="M 6.9 -34.2 L 10 -39.2 L 11.4 -33.4 Z" />
+
+                <path class="climb__body"
+                  d="M -7.5 -15.5 C -9.5 -11 -7.5 -5.5 -2 -4.3 C 3.5 -3.2 8.5 -6 9.3 -10.8
+                     C 10 -15.5 6.5 -19.5 1.5 -19.8 C -3 -20 -6 -18.5 -7.5 -15.5 Z" />
+                <ellipse class="climb__chest" cx="1.4" cy="-10.2" rx="3" ry="4.6" />
+
+                <circle class="climb__head" cx="3" cy="-26" r="10.5" />
+                <ellipse class="climb__muzzle" cx="8.5" cy="-20.8" rx="6" ry="4.2" />
+
+                <!-- The face is four marks and no more. On the path her whole
+                     head is about twelve pixels across; a second eye, a second
+                     brow and a full mouth all landed inside that and turned
+                     into one grey smudge. One big eye, one heavy brow, a nose
+                     and a half-frown survive the scale — everything else was
+                     detail that only existed when zoomed in.
+
+                     The eye is a light sclera with a dark pupil rather than a
+                     solid dark shape: drawn solid it fused with the brow into
+                     a black bar. The pupil sits forward, so she is looking
+                     where she is climbing. -->
+                <ellipse class="climb__eye" cx="6.6" cy="-28.9" rx="3.3" ry="3.1" />
+                <ellipse class="climb__pupil" cx="7.9" cy="-28.7" rx="1.5" ry="1.9" />
+                <!-- The brow drops toward the nose and rests hard on the eye.
+                     That slope is the entire scowl. -->
+                <path class="climb__brow" d="M 2.2 -34.2 L 10.2 -32.2" />
+
+                <path class="climb__nose" d="M 9.8 -23.6 L 13.8 -23.6 L 11.8 -21 Z" />
+                <path class="climb__mouth" d="M 11.8 -20.8 Q 10 -18.8 8.4 -19.8" />
+                <path class="climb__whiskers"
+                  d="M 14 -22 L 18.2 -23.2 M 14 -19.8 L 18.2 -19" />
+
+                <!-- Aya's bow, in the gap between the ears. -->
+                <g class="climb__bow">
+                  <path d="M 2.8 -38.6 L -1.2 -41.2 L -1.2 -36 Z" />
+                  <path d="M 4.2 -38.6 L 8.2 -41.2 L 8.2 -36 Z" />
+                  <circle cx="3.5" cy="-38.6" r="1.6" />
+                </g>
+
+                <g class="climb__limb climb__limb--leg-front">
+                  <path class="climb__leg" d="M 3 -9 L 6.5 -3.5" />
+                  <ellipse class="climb__paw" cx="7.5" cy="-2.4" rx="3.6" ry="2.4" />
+                  <path class="climb__toes" d="M 6.4 -3.6 L 6.4 -2.2 M 8.4 -3.6 L 8.4 -2.2" />
+                </g>
+                <!-- The near paw, up at the chest. It sits below the muzzle on
+                     purpose: any higher and two light shapes touch and read as
+                     one blob with no nose in it. -->
+                <g class="climb__limb climb__limb--arm-front">
+                  <path class="climb__arm" d="M 3 -17 C 8 -16.5 10.5 -14.5 10 -11.8" />
+                  <ellipse class="climb__paw" cx="10" cy="-10.2" rx="3.4" ry="3" />
+                  <path class="climb__toes" d="M 8.8 -12.2 L 8.8 -10.4 M 11.2 -12.2 L 11.2 -10.4" />
+                </g>
+              </g>
+            </g>
+
+            <g class="climb__burst"></g>
+            <g class="climb__hearts"></g>
+          </svg>
+
+          <!-- What he says. Positioned in pixels from JS against the scene's own
+               box, so it rides the same curve the climber does. -->
+          <p class="climb__say" id="climb-say" aria-hidden="true"></p>
+        </div>
       </div>
-    </section>
+
+      <!-- The streak sits below the mountain now, so it scrolls up and away
+           underneath it like everything else on the page. It used to be above,
+           which meant the mountain only started sticking once you had already
+           scrolled past it. -->
+      <div id="streak-hero"></div>
+
+      <!-- One scroll, not two. The habit list used to be its own bounded
+           scroller so the mountain could stay visible; the mountain is sticky
+           now, so that job is done and the inner scroller was only costing a
+           nested gesture to fight with. -->
+      <section class="stack" aria-labelledby="today-title">
+        <h2 class="sr-only" id="today-title">Today’s habits</h2>
+        <div id="today-list"></div>
+      </section>
+    </div>
 
     <section class="card" aria-labelledby="board-title">
       <div class="card__head">
@@ -228,7 +333,7 @@
   </dialog>
 
   <script type="module">
-    import { initHabitsPage } from './js/habits.js?v=41';
+    import { initHabitsPage } from './js/habits.js?v=42';
     initHabitsPage();
   </script>
 </body>

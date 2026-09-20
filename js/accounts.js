@@ -10,7 +10,7 @@
  * thinks and why; a person confirms it.
  */
 
-import { supabase, describeError } from './supabase.js?v=41';
+import { supabase, describeError } from './supabase.js?v=42';
 
 const ACTIVE_KEY = 'streak.active_account';
 const DISMISSED_KEY = 'streak.dismissed_status';

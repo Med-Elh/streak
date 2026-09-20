@@ -10,15 +10,15 @@
  *    at least one habit was done. Requiring all of them punishes adding a habit.
  */
 
-import { supabase, describeError } from './supabase.js?v=41';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=41';
-import { listProfiles, requireActiveProfile } from './profiles.js?v=41';
+import { supabase, describeError } from './supabase.js?v=42';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=42';
+import { listProfiles, requireActiveProfile } from './profiles.js?v=42';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
   todayISO, formatDate, initials, beat,
   prefersReducedMotion, applyProfileTheme,
-} from './ui.js?v=41';
-import { completionChart } from './charts.js?v=41';
+} from './ui.js?v=42';
+import { completionChart } from './charts.js?v=42';
 
 const DAY = 86400000;
 /** Streaks can run long; a year of history is plenty to walk back through. */
@@ -53,7 +53,7 @@ function todaySubtitle(done, total) {
   return HERO_LINES.left(remaining);
 }
 
-import { mountGreeting } from './greetings.js?v=41';
+import { mountGreeting } from './greetings.js?v=42';
 
 const state = {
   profile: null,
@@ -322,37 +322,109 @@ const CLIMB_PEAK = { x: 300, y: 26 };
     placing the speech bubble over the rendered SVG. */
 const CLIMB_VIEWBOX = { w: 400, h: 200 };
 
-/* What the climber says, addressed to whoever is signed in. Same shape as
-   HERO_LINES and the same voice — active, sentence case, no exclamation
-   marks — so a wording change stays a data edit. He is encouraging, not
-   congratulatory: the streak is the reward, he's just company on the way up. */
+/* What the climber says, addressed to whoever is signed in. Same ladder as
+   HERO_LINES and the same voice — active, sentence case, no exclamation marks,
+   never congratulatory. He is company on the way up, not a cheerleader.
+
+   Several lines per rung on purpose. One line per rung meant he said the same
+   eight sentences every day, and a character who repeats himself stops being a
+   character. Nothing here is logic, so adding a line is a data edit. */
 const CLIMB_LINES = {
-  greet:   (name) => `Ready when you are, ${name}.`,
-  first:   () => 'That’s one. Keep going.',
-  warming: () => 'Good pace.',
-  halfway: () => 'Halfway up.',
-  almost:  () => 'Almost there.',
-  oneLeft: (name) => `One more, ${name}.`,
-  allDone: () => 'Summit. See you tomorrow.',
-  down:    () => 'Back down a step. No rush.',
+  greet: [
+    (name) => `Ready when you are, ${name}.`,
+    () => 'Nothing ticked yet. Easy to fix.',
+    () => 'The hill isn’t going anywhere.',
+    (name) => `Morning, ${name}. Shall we?`,
+    () => 'One tick and we’re off.',
+    () => 'Whenever you’re ready. I’ll wait.',
+  ],
+  first: [
+    () => 'That’s one. Keep going.',
+    () => 'First one down.',
+    () => 'Good. Again.',
+    () => 'We’re moving.',
+    () => 'One down, and the rest get easier.',
+  ],
+  warming: [
+    () => 'Good pace.',
+    () => 'Steady climb.',
+    () => 'Nice rhythm.',
+    () => 'This is the easy stretch. Use it.',
+    () => 'Still plenty of hill.',
+    () => 'Keep them coming.',
+  ],
+  halfway: [
+    () => 'Halfway up.',
+    () => 'More behind you than ahead.',
+    () => 'Half done. The view improves from here.',
+    () => 'This is where it gets good.',
+    () => 'Halfway. Keep breathing.',
+  ],
+  almost: [
+    () => 'Almost there.',
+    () => 'The top is right there.',
+    () => 'A few steps left.',
+    () => 'Don’t stop now.',
+    () => 'Close enough to taste it.',
+  ],
+  oneLeft: [
+    (name) => `One more, ${name}.`,
+    () => 'Just one left.',
+    () => 'One tick from the top.',
+    (name) => `Finish it, ${name}.`,
+    () => 'Last one. Go.',
+  ],
+  allDone: [
+    () => 'Summit. See you tomorrow.',
+    (name) => `That’s the day, ${name}.`,
+    () => 'Every one of them. Rest up.',
+    () => 'Top of the hill.',
+    () => 'Done. I’ll be here tomorrow.',
+    () => 'Nothing left to climb today.',
+  ],
+  down: [
+    () => 'Back down a step. No rush.',
+    () => 'Fine. We’ll do it again.',
+    () => 'Undone. No harm.',
+    () => 'Take your time.',
+    () => 'Down one. Still a climb.',
+  ],
 };
+
+/* The last line used on each rung, so he can't say the same thing twice
+   running — which is the one thing that would give the variety away. */
+const lastLine = new Map();
+
+/** Which rung of the ladder a given progress sits on. */
+function climbStage(done, total, { greeting, descending }) {
+  if (greeting || done === 0) return 'greet';
+  if (descending) return 'down';
+
+  const remaining = total - done;
+  if (remaining === 0) return 'allDone';
+  if (remaining === 1) return 'oneLeft';
+  if (done === 1) return 'first';
+
+  const share = done / total;
+  if (share >= 0.75) return 'almost';
+  if (share >= 0.5) return 'halfway';
+  return 'warming';
+}
 
 /** The line for a given progress, mirroring todaySubtitle's ladder. */
 function climbLine(done, total, { greeting = false, descending = false } = {}) {
   const name = state.profile?.name ?? 'you';
-  if (greeting) return CLIMB_LINES.greet(name);
-  if (descending) return CLIMB_LINES.down();
-  if (done === 0) return CLIMB_LINES.greet(name);
+  const stage = climbStage(done, total, { greeting, descending });
+  const options = CLIMB_LINES[stage];
 
-  const remaining = total - done;
-  if (remaining === 0) return CLIMB_LINES.allDone();
-  if (remaining === 1) return CLIMB_LINES.oneLeft(name);
-  if (done === 1) return CLIMB_LINES.first();
+  let index = Math.floor(Math.random() * options.length);
+  // Nudge off the previous pick rather than re-rolling, so this can't loop.
+  if (options.length > 1 && index === lastLine.get(stage)) {
+    index = (index + 1) % options.length;
+  }
+  lastLine.set(stage, index);
 
-  const share = done / total;
-  if (share >= 0.75) return CLIMB_LINES.almost();
-  if (share >= 0.5) return CLIMB_LINES.halfway();
-  return CLIMB_LINES.warming();
+  return options[index](name);
 }
 
 /** How long a line stays up before it fades. */
@@ -363,7 +435,9 @@ let climbTimer = null;
 /* Base durations, in step with the CSS. --climb-tempo scales all of them from
    one place, so JS reads the token rather than keeping its own copy of the
    pace — change the token and the timers follow. */
-const CLIMB_BASE = { travel: 600, cheer: 900, heart: 1400, burst: 520 };
+/* `heart` is long because the kisses now cross most of the mountain face; at
+   the old 1400ms that distance read as a flick rather than a drift. */
+const CLIMB_BASE = { travel: 600, cheer: 900, heart: 2000, burst: 520 };
 
 /** The tempo multiplier, read from CSS so there is only ever one of it. */
 function climbTempo() {
@@ -570,12 +644,13 @@ function releaseHearts(count) {
     heart.setAttribute('class', 'climb__heart');
     heart.setAttribute('d', HEART_PATH);
     // Drift is in the wrapper's space, so it scales with the heart and the
-    // kisses keep the same spread relative to him however big they are.
-    // Biased sideways rather than straight up: the speech bubble sits directly
-    // over his head and draws on top of the scene, so hearts that rise
-    // vertically disappear into it just as they become visible.
-    heart.style.setProperty('--heart-x', `${(9 + Math.random() * 13).toFixed(1)}px`);
-    heart.style.setProperty('--heart-y', `${(-11 - Math.random() * 11).toFixed(1)}px`);
+    // kisses keep the same spread relative to her however big they are.
+    // They travel a long way now — out to the right and up across the face of
+    // the mountain, clearing the speech bubble early and thinning out near the
+    // summit rather than popping a few pixels from her hand. The `x` bias is
+    // what keeps them clear of the words, which draw on top of the scene.
+    heart.style.setProperty('--heart-x', `${(30 + Math.random() * 22).toFixed(1)}px`);
+    heart.style.setProperty('--heart-y', `${(-34 - Math.random() * 22).toFixed(1)}px`);
     heart.style.setProperty(
       '--heart-duration',
       `${Math.round((CLIMB_BASE.heart + Math.random() * 400) * tempo)}ms`,
@@ -1475,9 +1550,9 @@ function openHabitModal(habit = null) {
    back to var(--accent). */
 const PROFILE_ACCENTS = new Map([
   // Rose pink, matched to the gift-site palette.
-  ['aya', { color: '#D4788A', rgb: '212 120 138' }],
+  ['aya', { color: '#D4788A', rgb: '212 120 138', figure: 'female' }],
   // Periwinkle blue, the other fixed-profile hue.
-  ['mohamed', { color: '#9AA7D8', rgb: '154 167 216' }],
+  ['mohamed', { color: '#9AA7D8', rgb: '154 167 216', figure: 'neutral' }],
 ]);
 
 /** Sets --profile-accent (and its rgb triplet, space-separated like the
@@ -1490,9 +1565,13 @@ function applyProfileAccent(name) {
   if (accent) {
     document.body.style.setProperty('--profile-accent', accent.color);
     document.body.style.setProperty('--profile-accent-rgb', accent.rgb);
+    // Which climber walks the mountain. 'female' turns on the hair and the
+    // skirt in the SVG; anything else leaves the neutral figure alone.
+    document.body.dataset.figure = accent.figure ?? 'neutral';
   } else {
     document.body.style.removeProperty('--profile-accent');
     document.body.style.removeProperty('--profile-accent-rgb');
+    delete document.body.dataset.figure;
   }
 }
 
@@ -1612,6 +1691,32 @@ function wireClimb() {
     if (event.propertyName !== 'transform') return;
     finishTravel(travelToken);
   });
+
+  // Anything the browser scrolls to on its own — a card taking focus from the
+  // keyboard, an in-page anchor — would otherwise land underneath the pinned
+  // band and look like nothing happened. --sticky-top tells CSS how much is
+  // covered. The band's height follows the scene's rendered size, so it is
+  // measured rather than guessed, and measured again whenever that changes.
+  const band = climb.closest('.climb-band');
+  if (band) {
+    // Both boxes are measured rather than read off tokens: the bar wraps to two
+    // or three rows on a phone, and the band's height follows the scene's
+    // rendered width. Either changing means this has to be taken again.
+    const setStickyTop = () => {
+      const bar = document.querySelector('.topbar');
+      const barHeight = bar ? Math.round(bar.getBoundingClientRect().height) : 60;
+      const covered = barHeight + Math.round(band.getBoundingClientRect().height);
+      document.documentElement.style.setProperty('--sticky-top', `${covered}px`);
+    };
+
+    setStickyTop();
+    if ('ResizeObserver' in window) {
+      const watch = new ResizeObserver(setStickyTop);
+      watch.observe(band);
+      const bar = document.querySelector('.topbar');
+      if (bar) watch.observe(bar);
+    }
+  }
 
   // A resize is not a move, so the bubble is re-placed without the travel
   // curve it would otherwise inherit.

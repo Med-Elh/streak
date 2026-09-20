@@ -13,22 +13,22 @@
 
 import {
   supabase, describeError, constraintOf, columnOf, plainError,
-} from './supabase.js?v=41';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=41';
-import { requireActiveProfile } from './profiles.js?v=41';
+} from './supabase.js?v=42';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=42';
+import { requireActiveProfile } from './profiles.js?v=42';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
   failField, clearFieldErrors, attachTip,
   countUp, formatDate, todayISO, applyProfileTheme, prefersReducedMotion,
   formatMoney, formatSignedMoney, compactMoney, useCurrency, initMoney,
-} from './ui.js?v=41';
-import { mountGreeting } from './greetings.js?v=41';
-import { SESSIONS, SETUPS, INSTRUMENTS, loadOptions } from './constants.js?v=41';
+} from './ui.js?v=42';
+import { mountGreeting } from './greetings.js?v=42';
+import { SESSIONS, SETUPS, INSTRUMENTS, loadOptions } from './constants.js?v=42';
 import {
   equityAreaChart, rateBarsChart, outcomeDonut, rollingRateChart,
   metricBarsChart, multiEquityChart, seriesColor,
   signedBarChart, countBarChart,
-} from './charts.js?v=41';
+} from './charts.js?v=42';
 
 export const BACKTEST_STATUSES = [
   { value: 'active', label: 'Active' },

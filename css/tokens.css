@@ -112,6 +112,14 @@
   --flame-from:    #f7a13b;
   --flame-to:      #d9530b;
 
+  /* The climber. A mid-grey that holds against the mountain's --surface-2 in
+     both themes, plus a near-white for muzzle, chest and paws. These are their
+     own pair because no surface token stays light in dark mode — --surface is
+     #ffffff here and #171a23 there, so white paws would turn black. */
+  --cat-fur:       #7d8695;
+  --cat-light:     #f7f9fc;
+  --cat-line:      #2a2f3d;
+
   /* data / money */
   --positive:      #0b7d55;
   --positive-soft: #e2f4ec;
@@ -185,6 +193,12 @@
   --flame-from:    #ffc36b;
   --flame-to:      #ff6a2b;
 
+  /* Fur lifts and the light tone drops, so both stay readable on the dark
+     mountain; the line stays near-black, as an outline should. */
+  --cat-fur:       #8e97a8;
+  --cat-light:     #eef1f7;
+  --cat-line:      #12141b;
+
   --positive:      #3ed69a;
   --positive-soft: #122b23;
   --positive-rgb:  62 214 154;
@@ -247,6 +261,10 @@
 
     --flame-from:    #ffc36b;
     --flame-to:      #ff6a2b;
+
+    --cat-fur:       #8e97a8;
+    --cat-light:     #eef1f7;
+    --cat-line:      #12141b;
 
     --positive:      #3ed69a;
     --positive-soft: #122b23;

@@ -3,8 +3,8 @@
  * Section modules never import each other — anything they share lives here.
  */
 
-import { startPresenceHeartbeat, initPresenceStrip } from './presence.js?v=41';
-import { initChat } from './chat.js?v=41';
+import { startPresenceHeartbeat, initPresenceStrip } from './presence.js?v=42';
+import { initChat } from './chat.js?v=42';
 
 const THEME_KEY = 'streak.theme';
 
@@ -452,6 +452,29 @@ export function topbar({
       toastFn: toast,
       ui: { el, clear, toast, initials },
     });
+  }
+
+  /*
+   * --topbar-height is a guess, and on a narrow screen it is wrong.
+   *
+   * The bar is a fixed 60px on desktop, but under the mobile breakpoint it
+   * switches to height: auto and its contents wrap — wordmark, profile row,
+   * nav — which on a phone comes to roughly three times the token. Everything
+   * that pins itself below the bar reads that token: the chat panel, the
+   * trading rules panel, the habits mountain. All of them were being tucked
+   * underneath the bar rather than sitting below it.
+   *
+   * So the token is corrected here, from the real box, once the bar is in the
+   * document and whenever it reflows. One measurement, taken where the bar is
+   * built, instead of every consumer guessing the same wrong number.
+   */
+  if ('ResizeObserver' in window) {
+    new ResizeObserver(() => {
+      const height = Math.round(header.getBoundingClientRect().height);
+      if (height > 0) {
+        document.documentElement.style.setProperty('--topbar-height', `${height}px`);
+      }
+    }).observe(header);
   }
 
   return header;

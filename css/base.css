@@ -14,6 +14,12 @@ html {
   text-size-adjust: 100%;
   color-scheme: light;
   scrollbar-color: var(--border-strong) transparent;
+  /* How much of the top of the viewport is covered by pinned chrome, so that
+     anything the browser scrolls to of its own accord — a focused control, an
+     in-page anchor — clears it instead of landing underneath. Pages with a
+     sticky banner set --sticky-top from JS once they know its height; on pages
+     without one the fallback is just the top bar. */
+  scroll-padding-top: calc(var(--sticky-top, var(--topbar-height)) + var(--space-3));
 }
 :root[data-theme='dark'] { color-scheme: dark; }
 @media (prefers-color-scheme: dark) {
