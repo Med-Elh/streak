@@ -13,9 +13,9 @@
     href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
     rel="stylesheet" />
 
-  <link rel="stylesheet" href="css/tokens.css?v=39" />
-  <link rel="stylesheet" href="css/base.css?v=39" />
-  <link rel="stylesheet" href="css/components.css?v=39" />
+  <link rel="stylesheet" href="css/tokens.css?v=40" />
+  <link rel="stylesheet" href="css/base.css?v=40" />
+  <link rel="stylesheet" href="css/components.css?v=40" />
 </head>
 
 <body>
@@ -28,44 +28,110 @@
       <button class="btn btn--primary" type="button" id="add-habit">Add habit</button>
     </div>
 
-    <!-- Live progress for today: a filled bar behind the count. The fill width
-         and the count text are both set from renderTodayProgress. Retired at
-         every size now — the ring card below is the read — but it stays in the
-         DOM so the shared numbers pipeline keeps one shape across breakpoints. -->
-    <div class="today-progress today-progress--bar" id="today-progress" role="status" aria-live="polite" hidden>
-      <span class="today-progress__fill" aria-hidden="true"></span>
-      <span class="today-progress__text"></span>
-    </div>
+    <!-- Today's progress, for screen readers only. The mountain is the whole
+         visual read now, and it's aria-hidden because a drawing of a man on a
+         hill announces nothing useful. That left no spoken progress at all, so
+         the count lives on here as an off-screen live region: same numbers,
+         same moment, just not drawn. Written by renderTodayProgress. -->
+    <p class="sr-only" id="today-progress" role="status" aria-live="polite"></p>
 
     <div id="streak-hero"></div>
 
-    <!-- Progress read: the same numbers as the bar above, drawn as a ring and
-         rendered live by renderTodayProgress. The radius and layout swap at
-         the 768px breakpoint — radius 40 / full width on small screens, radius
-         48 / bounded width on desktop, where the card sits between the streak
-         hero and the habit list. The [hidden] attribute only guards the
-         pre-render moment; renderTodayProgress clears it. -->
-    <div class="today-card" id="today-card" role="status" aria-live="polite" hidden>
-      <div class="today-card__ring" aria-hidden="true">
-        <svg viewBox="0 0 92 92">
-          <circle class="today-card__track" cx="46" cy="46" r="40" />
-          <circle
-            class="today-card__arc"
-            cx="46" cy="46" r="40"
-            stroke-dasharray="251.3"
-            stroke-dashoffset="251.3" />
-        </svg>
-        <span class="today-card__pct">0%</span>
-      </div>
-      <div class="today-card__body">
-        <p class="today-card__message"></p>
-        <p class="today-card__meta"></p>
-      </div>
+    <!-- The climb: the same fraction as the ring above, read as height. The
+         mountain and the flag are static; renderClimb writes the route's `d`
+         and the climber's transform from the CLIMB_PATH waypoints in
+         habits.js, so the dotted line and the steps can never disagree. The
+         scene repeats what the ring card already announces, so it is
+         aria-hidden — one status region per reading, not two. The [hidden]
+         attribute only covers the pre-render moment. -->
+    <div class="climb-band">
+    <div class="climb" id="climb" hidden>
+      <svg class="climb__scene" viewBox="0 0 400 200" aria-hidden="true" focusable="false">
+        <!-- Depth, back to front: a distant range that only shows where the
+             main massif is low, then the massif itself, then the planes that
+             give it volume. Both silhouettes run to the bottom edge, so
+             neither floats above a horizon line.
+
+             The massif's west ridge is benched rather than straight — each
+             rise-and-flatten is what stops a long approach reading as a ramp,
+             and it gives the climb visible stages. Light comes from the upper
+             left throughout: every plane below is a triangle that shares two
+             of its points with the ridge above it, which is what keeps them
+             reading as faces of one mountain instead of shapes laid on top. -->
+        <path class="climb__range"
+          d="M 0 200 L 0 168 L 34 138 L 58 158 L 92 128 L 124 152 L 158 122
+             L 190 150 L 222 132 L 258 156 L 292 130 L 326 150 L 360 126
+             L 400 148 L 400 200 Z" />
+
+        <path class="climb__mountain"
+          d="M 0 200 L 0 178 L 46 150 L 74 156 L 112 124 L 140 130 L 176 96
+             L 208 104 L 238 70 L 262 76 L 288 40 L 300 26 L 316 56 L 332 96
+             L 348 120 L 372 158 L 400 186 L 400 200 Z" />
+
+        <!-- The whole east face, in shadow, sharing the silhouette exactly.
+             Its inner edge runs from the apex down to (262,200) — a spur ridge
+             coming toward the viewer. Closing it straight down from the apex
+             instead drew a dead vertical seam through the middle of the
+             mountain, which is the one thing that gave the scene away. -->
+        <path class="climb__shade"
+          d="M 300 26 L 316 56 L 332 96 L 348 120 L 372 158 L 400 186 L 400 200 L 262 200 Z" />
+
+        <!-- The west facet under the summit, catching the light. It stops
+             short of the spur so it never overlaps the shadow. -->
+        <path class="climb__lit" d="M 300 26 L 288 40 L 262 76 L 278 100 L 292 54 Z" />
+
+        <!-- The silhouette, as an open path over the fill rather than a stroke
+             on it. A stroked closed shape also draws its own base along the
+             bottom of the frame, which reads as a shelf the mountain is
+             standing on. This traces the skyline only. -->
+        <path class="climb__outline"
+          d="M 0 178 L 46 150 L 74 156 L 112 124 L 140 130 L 176 96 L 208 104
+             L 238 70 L 262 76 L 288 40 L 300 26 L 316 56 L 332 96 L 348 120
+             L 372 158 L 400 186" />
+
+        <!-- d is written by renderClimb from CLIMB_PATH. -->
+        <path class="climb__route" />
+
+        <g class="climb__flag">
+          <line class="climb__flag-pole" x1="308" y1="34" x2="308" y2="8" />
+          <path class="climb__flag-cloth" d="M 308 9 L 330 15.5 L 308 22 Z" />
+        </g>
+
+        <!-- Feet at the origin, so the group's translate is a point on the
+             route and the figure stands on it. The inner figure holds the
+             bob and the limbs; see .climb__limb for why each joint's
+             transform-origin is written as a percentage. -->
+        <g class="climb__climber" style="transform: translate(40px, 178px)">
+          <g class="climb__figure">
+            <path class="climb__limb climb__limb--leg-back"  d="M 0 -9 L -5 0" />
+            <path class="climb__limb climb__limb--arm-back"  d="M 0 -18 L -8 -27" />
+            <path class="climb__torso" d="M 0 -18 L 0 -9" />
+            <circle class="climb__head" cx="0" cy="-22.5" r="3.6" />
+            <path class="climb__limb climb__limb--leg-front" d="M 0 -9 L 5 0" />
+            <path class="climb__limb climb__limb--arm-front" d="M 0 -18 L 8 -12" />
+          </g>
+        </g>
+
+        <g class="climb__burst"></g>
+        <g class="climb__hearts"></g>
+      </svg>
+
+      <!-- What he says. Positioned in pixels from JS against the scene's own
+           box, so it rides the same curve the climber does. -->
+      <p class="climb__say" id="climb-say" aria-hidden="true"></p>
+    </div>
     </div>
 
+    <!-- The habit list scrolls inside itself so the mountain above can stay
+         put. overscroll-behavior stops the gesture chaining to the page when
+         you hit either end, which is what "separate scroll" has to mean on a
+         phone or it just feels broken. Labelled and focusable so a keyboard
+         can reach the scroll region like any other. -->
     <section class="stack" aria-labelledby="today-title">
       <h2 class="sr-only" id="today-title">Today’s habits</h2>
-      <div id="today-list"></div>
+      <div class="habit-scroll" id="habit-scroll" tabindex="0" role="group" aria-labelledby="today-title">
+        <div id="today-list"></div>
+      </div>
     </section>
 
     <section class="card" aria-labelledby="board-title">
@@ -116,6 +182,7 @@
     <div id="archived-list"></div>
   </main>
 
+
   <dialog class="modal" id="habit-modal" aria-labelledby="habit-title">
     <form id="habit-form">
       <div class="modal__head">
@@ -158,7 +225,7 @@
   </dialog>
 
   <script type="module">
-    import { initHabitsPage } from './js/habits.js?v=39';
+    import { initHabitsPage } from './js/habits.js?v=40';
     initHabitsPage();
   </script>
 </body>

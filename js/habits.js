@@ -10,15 +10,15 @@
  *    at least one habit was done. Requiring all of them punishes adding a habit.
  */
 
-import { supabase, describeError } from './supabase.js?v=39';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=39';
-import { listProfiles, requireActiveProfile } from './profiles.js?v=39';
+import { supabase, describeError } from './supabase.js?v=40';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=40';
+import { listProfiles, requireActiveProfile } from './profiles.js?v=40';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
   todayISO, formatDate, initials, beat,
   prefersReducedMotion, applyProfileTheme,
-} from './ui.js?v=39';
-import { completionChart } from './charts.js?v=39';
+} from './ui.js?v=40';
+import { completionChart } from './charts.js?v=40';
 
 const DAY = 86400000;
 /** Streaks can run long; a year of history is plenty to walk back through. */
@@ -53,7 +53,7 @@ function todaySubtitle(done, total) {
   return HERO_LINES.left(remaining);
 }
 
-import { mountGreeting } from './greetings.js?v=39';
+import { mountGreeting } from './greetings.js?v=40';
 
 const state = {
   profile: null,
@@ -145,6 +145,12 @@ const activeHabits = (profileId) =>
 const archivedHabits = (profileId) =>
   state.habits.filter((h) => h.profile_id === profileId && !h.active);
 
+/** Is this habit ticked today, right now? Read at click time rather than
+    captured when the card was built: cards now outlive their own state, since
+    a tick updates the card in place instead of replacing it. */
+const isDoneToday = (habitId) =>
+  state.entries.some((e) => e.habit_id === habitId && e.date === todayISO());
+
 /** How many of the profile's active habits still need a tick today. */
 function remainingToday() {
   const mine = activeHabits(state.profile.id);
@@ -194,16 +200,6 @@ async function persistTick(habit, done) {
 
 /** The ring fills over a month; a longer streak keeps it full and glowing. */
 const RING_TARGET = 30;
-
-/** The progress ring, sized to the viewport: radius 40 in the mobile 92px
-    box, radius 48 in the desktop 112px box. A full turn is one circumference;
-    everything the ring draws (box, centres, radius, sweep) is written per
-    render so a resize that crosses the breakpoint lands on the right shape. */
-function todayRing() {
-  return isMobile()
-    ? { box: 92, r: 40 }
-    : { box: 112, r: 48 };
-}
 
 function renderHero(mount) {
   const streak = profileStreak(state.profile.id);
@@ -256,17 +252,15 @@ function renderHero(mount) {
   refs.hero = hero;
 }
 
-/** Live progress: the pill bar and the ring card are both written from the
-    same numbers so they can never disagree. The ring card is the read on every
-    screen — on small screens the bar and the streak hero fold away; on desktop
-    the card sits between the hero and the habit list and the bar is retired.
-    Also keeps the hero's subtitle reading the same progress. Re-renders with
-    every state change. */
-function renderTodayProgress(mount, card = null) {
+/** Live progress. The mountain is the only visual read — the percentage ring
+    that used to sit here is gone — so this writes the off-screen live region
+    that keeps the count spoken, moves the climber, and keeps the hero's
+    subtitle on the same numbers. Re-renders with every state change. */
+function renderTodayProgress(mount, climb = null) {
   const mine = activeHabits(state.profile.id);
   if (!mine.length) {
     mount.hidden = true;
-    if (card) card.hidden = true;
+    if (climb) climb.hidden = true;
     return;
   }
   mount.hidden = false;
@@ -274,50 +268,17 @@ function renderTodayProgress(mount, card = null) {
   const today = todayISO();
   const done = doneSet(mine.map((h) => h.id)).get(today) ?? new Set();
   const total = mine.length;
-  const percent = Math.round((done.size / total) * 100);
-  const complete = done.size === total;
 
-  mount.dataset.complete = String(complete);
-  mount.querySelector('.today-progress__text').textContent =
-    `${done.size} of ${total} habit${total === 1 ? '' : 's'} done`;
-  mount.querySelector('.today-progress__fill').style.width = `${percent}%`;
+  // The spoken read. A full sentence, because a live region is heard out of
+  // context — "3 of 5" alone tells you nothing about what was counted.
+  mount.textContent =
+    `${done.size} of ${total} habit${total === 1 ? '' : 's'} done today.`;
 
-  if (card) renderTodayCard(card, done.size, total, percent, complete);
+  if (climb) renderClimb(climb, done.size, total);
 
   // The hero's today line reads the same numbers, so the two never disagree.
   const line = refs.hero && refs.hero.querySelector('.streak-hero__line');
   if (line) updateHeroLine(line, done.size, total);
-}
-
-/** The progress ring card (radius 40 under 768px, 48 above). The card only
-    writes final values: the visible sweep is the dashoffset, so the CSS
-    transition does the moving. A completed day swaps the percentage for a ✓,
-    spins the arc to the positive stroke, and fades the card's accent tint.
-    Copy comes from the same ladder the hero uses, so the two never disagree. */
-function renderTodayCard(card, done, total, percent, complete) {
-  card.hidden = false;
-  card.dataset.complete = String(complete);
-
-  // Ring geometry follows the viewport: box, centres, radius and sweep are all
-  // re-written here so the dash values always match the drawn circle.
-  const ring = todayRing();
-  const circumference = 2 * Math.PI * ring.r;
-  const svg = card.querySelector('.today-card__ring svg');
-  svg.setAttribute('viewBox', `0 0 ${ring.box} ${ring.box}`);
-  const centre = String(ring.box / 2);
-  for (const circle of card.querySelectorAll('.today-card__ring circle')) {
-    circle.setAttribute('cx', centre);
-    circle.setAttribute('cy', centre);
-    circle.setAttribute('r', String(ring.r));
-  }
-  const arc = card.querySelector('.today-card__arc');
-  arc.style.strokeDasharray = circumference.toFixed(1);
-  arc.style.strokeDashoffset = (circumference * (1 - done / total)).toFixed(1);
-
-  card.querySelector('.today-card__pct').textContent = complete ? '✓' : `${percent}%`;
-  card.querySelector('.today-card__message').textContent = todaySubtitle(done, total);
-  card.querySelector('.today-card__meta').textContent =
-    `${done} of ${total} habit${total === 1 ? '' : 's'} done`;
 }
 
 /** Swap the hero subtitle's text, fading the new line in (skipped entirely
@@ -332,6 +293,421 @@ function updateHeroLine(line, done, total) {
   void line.offsetWidth; // restart the fade from opacity 0
   line.classList.add('is-refreshing');
 }
+
+/* ------------------------------------------------------------- the climb -- */
+
+/**
+ * The route up the mountain, base to summit, in the scene's 400×200 user
+ * units. Both the dotted path and the climber's position are written from this
+ * one array — pointAt walks it by length rather than by index, so a step is
+ * always exactly one habit however many habits there are. Three habits land on
+ * thirds of the route, seven on sevenths, and adding one re-spaces the whole
+ * climb rather than stranding the figure between waypoints.
+ */
+const CLIMB_PATH = [
+  { x: 40, y: 178 },
+  { x: 92, y: 152 },
+  { x: 136, y: 136 },
+  { x: 180, y: 112 },
+  { x: 218, y: 98 },
+  { x: 254, y: 78 },
+  { x: 276, y: 60 },
+  { x: 294, y: 34 },
+];
+
+/** The apex, where the flag stands and the burst goes off. */
+const CLIMB_PEAK = { x: 300, y: 26 };
+
+/** The scene's own coordinate space, used to turn user units into pixels when
+    placing the speech bubble over the rendered SVG. */
+const CLIMB_VIEWBOX = { w: 400, h: 200 };
+
+/* What the climber says, addressed to whoever is signed in. Same shape as
+   HERO_LINES and the same voice — active, sentence case, no exclamation
+   marks — so a wording change stays a data edit. He is encouraging, not
+   congratulatory: the streak is the reward, he's just company on the way up. */
+const CLIMB_LINES = {
+  greet:   (name) => `Ready when you are, ${name}.`,
+  first:   () => 'That’s one. Keep going.',
+  warming: () => 'Good pace.',
+  halfway: () => 'Halfway up.',
+  almost:  () => 'Almost there.',
+  oneLeft: (name) => `One more, ${name}.`,
+  allDone: () => 'Summit. See you tomorrow.',
+  down:    () => 'Back down a step. No rush.',
+};
+
+/** The line for a given progress, mirroring todaySubtitle's ladder. */
+function climbLine(done, total, { greeting = false, descending = false } = {}) {
+  const name = state.profile?.name ?? 'you';
+  if (greeting) return CLIMB_LINES.greet(name);
+  if (descending) return CLIMB_LINES.down();
+  if (done === 0) return CLIMB_LINES.greet(name);
+
+  const remaining = total - done;
+  if (remaining === 0) return CLIMB_LINES.allDone();
+  if (remaining === 1) return CLIMB_LINES.oneLeft(name);
+  if (done === 1) return CLIMB_LINES.first();
+
+  const share = done / total;
+  if (share >= 0.75) return CLIMB_LINES.almost();
+  if (share >= 0.5) return CLIMB_LINES.halfway();
+  return CLIMB_LINES.warming();
+}
+
+/** How long a line stays up before it fades. */
+const SAY_MS = 3200;
+let sayTimer = null;
+let climbTimer = null;
+
+/* Base durations, in step with the CSS. --climb-tempo scales all of them from
+   one place, so JS reads the token rather than keeping its own copy of the
+   pace — change the token and the timers follow. */
+const CLIMB_BASE = { travel: 600, cheer: 900, heart: 1400, burst: 520 };
+
+/** The tempo multiplier, read from CSS so there is only ever one of it. */
+function climbTempo() {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--climb-tempo');
+  const value = Number.parseFloat(raw);
+  return Number.isFinite(value) && value > 0 ? value : 1;
+}
+
+const travelMs = () => CLIMB_BASE.travel * climbTempo();
+const cheerMs = () => CLIMB_BASE.cheer * climbTempo();
+
+/* A travel is superseded the moment another one starts, so each gets a token
+   and only the current one is allowed to finish. Without it, ticking twice
+   quickly would fire two celebrations for one arrival. */
+let travelToken = 0;
+
+/** easeOutBack, from easings.net. Going up, the overshoot *is* the bounce on
+    arrival — no second keyframe, and nothing to cancel if the next tick lands
+    mid-climb. */
+const CLIMB_EASE_UP = 'cubic-bezier(0.34, 1.56, 0.64, 1)';
+
+/** Burst colours, all from the token set — the profile's accent plus the two
+    flame tones the week dots already use. */
+const BURST_COLOURS = ['--profile-accent', '--flame-from', '--flame-to'];
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/** Last rendered position, so a move can tell which way it's going and the
+    summit can tell a fresh arrival from a re-render that was already there.
+    `point` is kept so a resize can re-place the bubble without a move. */
+const climbState = { t: null, complete: false, point: null };
+
+/** The point a fraction `t` of the way along the route, measured by distance
+    so uneven waypoint spacing doesn't make some habits count for more. */
+function pointAt(t) {
+  // A non-finite fraction would become translate(NaNpx, NaNpx) and take the
+  // climber off the scene entirely; the base is the honest fallback.
+  const clamped = Number.isFinite(t) ? Math.min(Math.max(t, 0), 1) : 0;
+
+  const spans = [];
+  let total = 0;
+  for (let i = 1; i < CLIMB_PATH.length; i += 1) {
+    const a = CLIMB_PATH[i - 1];
+    const b = CLIMB_PATH[i];
+    const length = Math.hypot(b.x - a.x, b.y - a.y);
+    spans.push({ a, b, length });
+    total += length;
+  }
+  if (!total) return CLIMB_PATH[0];
+
+  let travelled = clamped * total;
+  for (let i = 0; i < spans.length; i += 1) {
+    const span = spans[i];
+    const last = i === spans.length - 1;
+    if (travelled <= span.length || last) {
+      // Clamped because float drift can leave a hair more distance than the
+      // final span is long.
+      const k = span.length ? Math.min(travelled / span.length, 1) : 1;
+      return {
+        x: span.a.x + (span.b.x - span.a.x) * k,
+        y: span.a.y + (span.b.y - span.a.y) * k,
+      };
+    }
+    travelled -= span.length;
+  }
+  return CLIMB_PATH[CLIMB_PATH.length - 1];
+}
+
+/** Moves the climber to done/total along the route, plants the flag at the
+    top, and fires the burst on arrival. Called from renderTodayProgress, so it
+    reads exactly the numbers the ring card and the hero line are reading. */
+function renderClimb(climb, done, total) {
+  if (!total) {
+    climb.hidden = true;
+    return;
+  }
+  climb.hidden = false;
+
+  const route = climb.querySelector('.climb__route');
+  if (route && !route.getAttribute('d')) {
+    route.setAttribute('d', CLIMB_PATH.map((p, i) => `${i ? 'L' : 'M'} ${p.x} ${p.y}`).join(' '));
+  }
+
+  const climber = climb.querySelector('.climb__climber');
+  if (!climber) return;
+
+  const t = done / total;
+  const complete = done === total;
+  const first = climbState.t === null;
+  const moved = !first && t !== climbState.t;
+  const ascending = !first && t > climbState.t;
+  const arrived = complete && !first && !climbState.complete;
+  const point = pointAt(t);
+
+  // Only climbing gets the overshoot. Coming back down is a correction, and
+  // the first paint is just the page arriving — neither should celebrate.
+  climber.style.setProperty('--climb-ease', ascending ? CLIMB_EASE_UP : 'var(--ease-out)');
+  climber.style.transform = `translate(${point.x.toFixed(2)}px, ${point.y.toFixed(2)}px)`;
+
+  climb.dataset.complete = String(complete);
+
+  if (moved) speak(climbLine(done, total, { descending: !ascending }), point);
+
+  climbState.t = t;
+  climbState.complete = complete;
+  climbState.point = point;
+  climbState.ascending = ascending;
+  climbState.arrived = arrived;
+
+  // Everything that happens *on getting there* — the landing, the cheer, the
+  // kiss, the summit burst — is deferred to the end of the travel, so it plays
+  // where he lands rather than over him while he is still on his way.
+  if (moved) beginTravel();
+}
+
+/** Starts a travel: limbs go, and the arrival is scheduled. */
+function beginTravel() {
+  const token = ++travelToken;
+
+  if (prefersReducedMotion()) {
+    finishTravel(token);
+    return;
+  }
+
+  setClimbing(true);
+  clearTimeout(climbTimer);
+  // transitionend normally ends it; this is the fallback for a transition that
+  // never fires at all (a backgrounded tab, a move of zero distance).
+  climbTimer = setTimeout(() => finishTravel(token), travelMs() + 140);
+}
+
+/** The arrival. Runs once per travel, for the newest travel only. */
+function finishTravel(token) {
+  if (token !== travelToken) return;
+
+  clearTimeout(climbTimer);
+  setClimbing(false);
+
+  // Coming back down is a correction. Celebrating it would read the day wrong.
+  if (!climbState.ascending) return;
+
+  if (climbState.arrived && refs.climb) fireSummitBurst(refs.climb);
+  // Topping out is worth more than a step, so it gets a handful of kisses
+  // rather than one.
+  celebrateStep(climbState.arrived ? 4 : 1);
+}
+
+/**
+ * The celebration for a finished step: a hop with squash and stretch, both
+ * arms up, then a kiss blown from the hand. The hearts are released at the
+ * point in the keyframe where his hand leaves his face — 78% — so the gesture
+ * and the thing it produces actually line up.
+ */
+function celebrateStep(hearts) {
+  if (prefersReducedMotion()) return;
+
+  for (const figure of document.querySelectorAll('.climb__figure')) {
+    restartClass(figure, 'is-cheering', 'climb-jump', cheerMs() + 400);
+  }
+  setTimeout(() => releaseHearts(hearts), cheerMs() * 0.78);
+}
+
+/** A small heart, drawn around its own centre so it can be placed anywhere. */
+const HEART_PATH = 'M 0 3.4 C -4.4 0.2 -4.2 -3 -2.1 -3.7 C -0.8 -4.1 0 -3.2 0 -2.3'
+  + ' C 0 -3.2 0.8 -4.1 2.1 -3.7 C 4.2 -3 4.4 0.2 0 3.4 Z';
+
+/** Scales the heart up from the size the raw path draws at. */
+const HEART_SCALE = 1.5;
+
+/**
+ * Where his hand is at the moment the kiss leaves it. The shoulder sits 18
+ * above his feet, and at the 78% frame the front arm is rotated -40° from
+ * rest, which puts the hand very nearly level with the shoulder and 10 out to
+ * the side. Worked out from the keyframe rather than eyeballed, so the hearts
+ * actually leave the hand instead of near it.
+ */
+const HEART_HAND = { x: 10, y: -18.5 };
+
+/** Kisses, leaving from his hand and drifting up and away. */
+function releaseHearts(count) {
+  const climb = refs.climb;
+  if (!climb || climb.hidden || prefersReducedMotion()) return;
+
+  const layer = climb.querySelector('.climb__hearts');
+  const point = climbState.point;
+  if (!layer || !point) return;
+
+  const made = [];
+  const tempo = climbTempo();
+
+  for (let i = 0; i < count; i += 1) {
+    // The position has to live on a wrapper, not on the heart. The heart's own
+    // transform is what the keyframes animate, and a CSS transform beats the
+    // presentation attribute outright — setting both put every heart at the
+    // scene's origin, flying out of the top-left corner instead of his hand.
+    const anchor = document.createElementNS(SVG_NS, 'g');
+    anchor.setAttribute(
+      'transform',
+      `translate(${(point.x + HEART_HAND.x).toFixed(1)} ${(point.y + HEART_HAND.y).toFixed(1)})`
+      + ` scale(${HEART_SCALE})`,
+    );
+
+    const heart = document.createElementNS(SVG_NS, 'path');
+    heart.setAttribute('class', 'climb__heart');
+    heart.setAttribute('d', HEART_PATH);
+    // Drift is in the wrapper's space, so it scales with the heart and the
+    // kisses keep the same spread relative to him however big they are.
+    // Biased sideways rather than straight up: the speech bubble sits directly
+    // over his head and draws on top of the scene, so hearts that rise
+    // vertically disappear into it just as they become visible.
+    heart.style.setProperty('--heart-x', `${(9 + Math.random() * 13).toFixed(1)}px`);
+    heart.style.setProperty('--heart-y', `${(-11 - Math.random() * 11).toFixed(1)}px`);
+    heart.style.setProperty(
+      '--heart-duration',
+      `${Math.round((CLIMB_BASE.heart + Math.random() * 400) * tempo)}ms`,
+    );
+    heart.style.animationDelay = `${Math.round(i * 110 * tempo)}ms`;
+    heart.addEventListener('animationend', () => anchor.remove(), { once: true });
+
+    anchor.append(heart);
+    made.push(anchor);
+    layer.append(anchor);
+  }
+
+  const longest = (CLIMB_BASE.heart + 400 + (count * 110)) * tempo + 200;
+  setTimeout(() => { for (const anchor of made) anchor.remove(); }, longest);
+}
+
+/** Runs the limb cycle on every figure on the page — the scene's and the
+    dock's — so the two never disagree about what he's doing. */
+function setClimbing(on) {
+  for (const figure of document.querySelectorAll('.climb__figure')) {
+    figure.classList.toggle('is-climbing', on);
+  }
+}
+
+function wave() {
+  if (prefersReducedMotion()) return;
+  const cap = (1100 * climbTempo()) + 300;
+  for (const figure of document.querySelectorAll('.climb__figure')) {
+    restartClass(figure, 'is-waving', 'climb-wave', cap);
+  }
+}
+
+/** Shows a line over his head and takes it away again. */
+function speak(text, point) {
+  clearTimeout(sayTimer);
+
+  const { say } = refs;
+  if (!say) return;
+
+  say.textContent = text;
+  if (point) positionSay(say, point);
+  say.dataset.shown = 'true';
+
+  sayTimer = setTimeout(() => { say.dataset.shown = 'false'; }, SAY_MS);
+}
+
+/**
+ * Puts the bubble's tail on the climber. Everything is measured off the
+ * scene's rendered width, so it lands correctly at any size, and the bubble is
+ * nudged back inside the scene when centring it would hang off an edge — the
+ * tail keeps pointing at him when that happens, which is the whole job.
+ */
+function positionSay(say, point) {
+  const scene = refs.climb?.querySelector('.climb__scene');
+  if (!scene) return;
+
+  const width = scene.getBoundingClientRect().width;
+  if (!width) return;
+
+  const scale = width / CLIMB_VIEWBOX.w;
+  const x = point.x * scale;
+  const y = point.y * scale;
+  // Clear his head (about 26 user units above his feet), then the tail.
+  const lift = (26 * scale) + 10;
+
+  const half = say.offsetWidth / 2;
+  const margin = 6;
+  const centre = Math.min(Math.max(x, half + margin), Math.max(width - half - margin, half + margin));
+
+  say.style.translate = `calc(${centre.toFixed(1)}px - 50%) calc(${(y - lift).toFixed(1)}px - 100%)`;
+
+  const tail = half ? (((x - (centre - half)) / (half * 2)) * 100) : 50;
+  say.style.setProperty('--tail-x', `${Math.min(Math.max(tail, 8), 92).toFixed(1)}%`);
+}
+
+/** The greeting, once per page load: he notices you before you've done
+    anything. Delayed so it lands after the page has settled rather than
+    competing with it. */
+function greetFromClimber() {
+  if (!refs.climb || refs.climb.hidden) return;
+
+  const mine = activeHabits(state.profile.id);
+  if (!mine.length) return;
+
+  const done = doneSet(mine.map((h) => h.id)).get(todayISO()) ?? new Set();
+  speak(
+    climbLine(done.size, mine.length, { greeting: true }),
+    climbState.point ?? pointAt(0),
+  );
+  wave();
+}
+
+/** Twelve circles thrown out from the apex, each removing itself when it ends.
+    Building fresh nodes per burst means no keyframe is ever restarted on an
+    element that is still mid-flight. */
+function fireSummitBurst(climb) {
+  if (prefersReducedMotion()) return;
+
+  const layer = climb.querySelector('.climb__burst');
+  if (!layer) return;
+
+  const made = [];
+  const tempo = climbTempo();
+  for (let i = 0; i < 12; i += 1) {
+    const angle = ((Math.PI * 2 * i) / 12) + (Math.random() * 0.3);
+    const reach = 26 + Math.random() * 20;
+
+    const particle = document.createElementNS(SVG_NS, 'circle');
+    particle.setAttribute('class', 'climb__particle');
+    particle.setAttribute('cx', String(CLIMB_PEAK.x));
+    particle.setAttribute('cy', String(CLIMB_PEAK.y));
+    particle.setAttribute('r', (1.6 + Math.random() * 1.6).toFixed(2));
+    particle.style.setProperty('--burst-x', `${(Math.cos(angle) * reach).toFixed(1)}px`);
+    // Biased upward: sparks off a summit go up before anything else.
+    particle.style.setProperty('--burst-y', `${((Math.sin(angle) * reach) - 10).toFixed(1)}px`);
+    particle.style.setProperty(
+      '--burst-duration',
+      `${Math.round((CLIMB_BASE.burst + Math.random() * 260) * tempo)}ms`,
+    );
+    particle.style.fill = `var(${BURST_COLOURS[i % BURST_COLOURS.length]}, var(--accent))`;
+    particle.addEventListener('animationend', () => particle.remove(), { once: true });
+
+    made.push(particle);
+    layer.append(particle);
+  }
+
+  // Safety net for a missed event (a backgrounded tab, say). Only this burst's
+  // own particles, so a quick untick-and-retick can't sweep away the next one.
+  setTimeout(() => { for (const particle of made) particle.remove(); }, 900 * tempo);
+}
+
+/* ------------------------------------------------------------ celebration -- */
 
 // Confetti colours: the accent orange plus two complementary tones already in
 // the token set (blue --info, green --positive). All UI tokens, never raw hex.
@@ -474,7 +850,7 @@ function habitCard(habit, isDone) {
     el('span', { text: isDone ? 'Done today' : 'Mark done today' }),
   ]);
 
-  tick.addEventListener('click', () => onTick(habit, isDone, tick, card));
+  tick.addEventListener('click', () => onTick(habit, isDoneToday(habit.id)));
 
   card.append(
     el('div', { class: 'habit-card__top' }, [
@@ -601,53 +977,150 @@ function menuItem(label, description, action, modifier = '') {
   });
 }
 
-/** The check animation: scale pop + soft green flash. The class is added only
-    after the Supabase write lands (guaranteeing the habit actually completed),
-    then removed once both keyframes have ended. Never runs for unchecking. */
+/** The check animation: a scale pop, added only after the Supabase write lands
+    (so it reads as "saved", not "clicked") and removed once the keyframe ends.
+    Never runs for unchecking. The listener checks the animation name because
+    the card is a long-lived node now — streak-pulse and card-lift bubble their
+    own animationend events up through it. */
 function announceCompletion(habitId) {
   if (prefersReducedMotion()) return;
 
   const card = refs.today.querySelector(`[data-id="${habitId}"]`);
   if (!card) return;
 
-  card.classList.add('is-completing');
-  let pending = 2; // habit-complete-scale + habit-complete-flash
-  const settle = () => {
-    pending -= 1;
-    if (pending === 0) card.classList.remove('is-completing');
+  restartClass(card, 'is-completing', 'habit-complete-scale');
+}
+
+/** The card-lift on a day the streak actually grew. */
+function celebrateCard(card) {
+  if (prefersReducedMotion()) return;
+  restartClass(card, 'is-celebrating', 'card-lift');
+}
+
+/** One pulse on a number that just went up. */
+function pulseStreak(node) {
+  if (prefersReducedMotion()) return;
+  restartClass(node, 'is-pulsing', 'streak-pulse');
+}
+
+/* One safety timer per element per class, so a late net from an earlier run
+   can never strip the class off a run that has only just started. */
+const restartTimers = new WeakMap();
+
+/**
+ * Plays a one-shot keyframe class from the start, whatever state the element
+ * was in. Cards and counters are no longer rebuilt between ticks, so a class
+ * left on from last time would simply not replay — hence the remove, the
+ * forced reflow, and the tidy-up when the named animation ends.
+ *
+ * The name check matters now that cards are long-lived: streak-pulse and
+ * habit-complete-scale both bubble their animationend up through the card, and
+ * either one would otherwise clear the other's class early.
+ */
+function restartClass(node, className, animationName, maxMs = 1000) {
+  const timers = restartTimers.get(node) ?? {};
+  restartTimers.set(node, timers);
+  clearTimeout(timers[className]);
+
+  node.classList.remove(className);
+  void node.offsetWidth; // forces the restart
+  node.classList.add(className);
+
+  // Called with an event by the listeners, and bare by the safety net below.
+  const settle = (event) => {
+    if (event && event.animationName !== animationName) return;
+    clearTimeout(timers[className]);
+    node.classList.remove(className);
+    node.removeEventListener('animationend', settle);
+    node.removeEventListener('animationcancel', settle);
   };
-  card.addEventListener('animationend', settle);
-  card.addEventListener('animationcancel', settle);
-  // Safety net so the class can never linger on a card (hidden tab, etc.).
-  setTimeout(() => card.classList.remove('is-completing'), 800);
+
+  node.addEventListener('animationend', settle);
+  node.addEventListener('animationcancel', settle);
+  // In a backgrounded tab the events may never arrive; the class must not
+  // linger on an element that now survives every re-render.
+  timers[className] = setTimeout(settle, maxMs);
+}
+
+/**
+ * Updates a card that is already on screen instead of replacing it.
+ *
+ * This is the whole reason the tick no longer calls renderToday: the
+ * completion choreography — the accent rail wiping down, the tint coming up,
+ * the ripple under the check, the name stepping aside — is built from CSS
+ * transitions, and a transition can only run on an element that was already
+ * there. A rebuilt card mounts in its finished state and never moves.
+ */
+function syncHabitCard(habit) {
+  const card = refs.today.querySelector(`[data-id="${habit.id}"]`);
+  // No card means the list shape changed under us; a full render is correct.
+  if (!card) {
+    renderToday(refs.today);
+    return;
+  }
+
+  const today = todayISO();
+  const dates = new Set(state.entries.filter((e) => e.habit_id === habit.id).map((e) => e.date));
+  const isDone = dates.has(today);
+  const streak = habitStreak(habit.id);
+  const grew = streak > Number(card.dataset.streak);
+
+  card.dataset.done = String(isDone);
+  card.dataset.streak = String(streak);
+
+  const tick = card.querySelector('.habit-tick');
+  tick.setAttribute('aria-pressed', String(isDone));
+  tick.setAttribute(
+    'aria-label',
+    isDone ? `Untick ${habit.name} for today` : `Tick ${habit.name} for today`,
+  );
+  tick.querySelector('span:last-child').textContent = isDone ? 'Done today' : 'Mark done today';
+
+  const number = card.querySelector('.habit-card__streak-num');
+  number.textContent = String(streak);
+  card.querySelector('.habit-card__streak-unit').textContent = streak === 1 ? 'day' : 'days';
+  if (grew) pulseStreak(number);
+
+  // Today is the last column, and the only one a tick can move.
+  const dot = card.querySelector('.week-dots')?.lastElementChild;
+  if (dot) {
+    dot.dataset.done = String(isDone);
+    dot.title = `${formatDate(today)} — ${isDone ? 'done' : 'not done'}`;
+  }
+
+  // The year grid shades by run length, so a single day changing can restage
+  // the cells around it. Cheaper to rebuild than to patch, and nothing in it
+  // animates, so replacing the subtree costs no motion.
+  card.querySelector('.contrib')?.replaceWith(contributionGrid(habit, dates, today));
 }
 
 /**
  * The tick takes a moment on purpose. Ticking is the one thing this app is for,
  * so it gets a beat of acknowledgement before the page rearranges itself.
  */
-async function onTick(habit, wasDone, tick, card) {
+async function onTick(habit, wasDone) {
   const extending = !wasDone;
   const before = state.lastHeroStreak;
 
-  // Everything the tick affects — the hero count and ring, the seven-day dots,
-  // the contribution grid, the board — reads from state.entries, so changing it
-  // here means the whole page moves on this frame rather than after the write.
+  // Everything the tick affects — the hero count and ring, the climber, the
+  // seven-day dots, the contribution grid, the board — reads from
+  // state.entries, so changing it here means the whole page moves on this
+  // frame rather than after the write.
   applyTick(habit, extending);
-  if (extending) tick.classList.add('is-ticking');
 
   const allDone = extending && remainingToday() === 0;
 
   // Render before celebrating, so the pop happens on the new count rather than
   // over the old one that is about to be replaced.
-  renderAll();
+  renderAfterTick(habit);
 
   // The last habit of the day gets the confetti and celebration toast.
   if (allDone) celebrateAllDone();
 
   if (extending && profileStreak(state.profile.id) > before) {
     refs.hero?.classList.add('is-celebrating');
-    refs.today.querySelector(`[data-id="${habit.id}"]`)?.classList.add('is-celebrating');
+    const card = refs.today.querySelector(`[data-id="${habit.id}"]`);
+    if (card) celebrateCard(card);
     await beat(520);
   }
 
@@ -664,7 +1137,7 @@ async function onTick(habit, wasDone, tick, card) {
     await persistTick(habit, extending);
   } catch (error) {
     applyTick(habit, wasDone);   // put it back exactly as it was
-    renderAll();
+    renderAfterTick(habit);      // and animate it back, rather than snapping
     toast(error.message, { type: 'error' });
     return;
   }
@@ -948,11 +1421,26 @@ let refs = {};
 
 function renderAll() {
   renderHero(refs.hero0);
-  renderTodayProgress(refs.progress, refs.todayCard);
+  renderTodayProgress(refs.progress, refs.climb);
   // Remembered so the next tick can tell whether the streak actually grew.
   state.lastHeroStreak = profileStreak(state.profile.id);
   renderToday(refs.today);
   renderArchived(refs.archived);
+  renderBoard(refs.board);
+  renderChart(refs.canvas, refs.chartEmpty);
+}
+
+/**
+ * The post-tick render. Identical to renderAll except for the habit list,
+ * where the one card that changed is updated in place so its transitions can
+ * actually run — see syncHabitCard. Archived habits can't change on a tick, so
+ * that list is left alone.
+ */
+function renderAfterTick(habit) {
+  renderHero(refs.hero0);
+  renderTodayProgress(refs.progress, refs.climb);
+  state.lastHeroStreak = profileStreak(state.profile.id);
+  syncHabitCard(habit);
   renderBoard(refs.board);
   renderChart(refs.canvas, refs.chartEmpty);
 }
@@ -1029,7 +1517,8 @@ export async function initHabitsPage() {
   refs = {
     hero0: document.getElementById('streak-hero'),
     progress: document.getElementById('today-progress'),
-    todayCard: document.getElementById('today-card'),
+    climb: document.getElementById('climb'),
+    say: document.getElementById('climb-say'),
     today: document.getElementById('today-list'),
     archived: document.getElementById('archived-list'),
     habitTitle: document.getElementById('habit-title'),
@@ -1070,6 +1559,7 @@ export async function initHabitsPage() {
   populateFilters();
   renderAll();
   wireControls();
+  wireClimb();
 
   // Crossing the mobile breakpoint swaps which progress read and card shape
   // are in use (the chevron only exists on small screens), so each crossing
@@ -1100,6 +1590,43 @@ function refreshHabitFilter() {
   );
   refs.filterHabit.value = 'all';
   state.filters.habitId = 'all';
+}
+
+/**
+ * The climber's own wiring: stop the limbs when he stops moving, and keep the
+ * bubble over his head when the scene changes size.
+ *
+ * There used to be a docked pill here that appeared once the scene scrolled
+ * away. The scene is pinned under the top bar now, so it never scrolls away and
+ * the pill could never fire — two mechanisms for one job, one of them dead.
+ */
+function wireClimb() {
+  const { climb, say } = refs;
+  if (!climb) return;
+
+  const climber = climb.querySelector('.climb__climber');
+  const scene = climb.querySelector('.climb__scene');
+
+  // The real end of a travel: the limbs stop here and the celebration starts.
+  climber?.addEventListener('transitionend', (event) => {
+    if (event.propertyName !== 'transform') return;
+    finishTravel(travelToken);
+  });
+
+  // A resize is not a move, so the bubble is re-placed without the travel
+  // curve it would otherwise inherit.
+  if (scene && say && 'ResizeObserver' in window) {
+    new ResizeObserver(() => {
+      if (say.dataset.shown !== 'true' || !climbState.point) return;
+      say.style.transition = 'none';
+      positionSay(say, climbState.point);
+      void say.offsetWidth;
+      say.style.transition = '';
+    }).observe(scene);
+  }
+
+  // He notices you a beat after the page settles.
+  setTimeout(greetFromClimber, 900);
 }
 
 function wireControls() {

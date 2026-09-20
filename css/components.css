@@ -2571,79 +2571,377 @@
    because Tasks' own progress card shares the bare .today-progress class. */
 .today-progress.today-progress--bar { display: none; }
 
-/* The ring card: the same numbers as the bar, drawn as a ring. On small
-   screens it replaces the bar and the streak hero; on desktop it sits between
-   the hero and the habit list at a bounded width, its accent following the
-   signed-in profile. Radius 48 here (vs 40 on mobile) is written from JS with
-   the matching dash values, so the visible sweep is always exact. */
-.today-card {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  max-width: 420px;
-  padding: var(--space-4);
-  border-radius: var(--radius-md);
-  background: var(--surface-2);
-  transition: background 0.6s ease;
+
+/* ==========================================================================
+   Habits — the climb
+   ==========================================================================
+   Today's progress as a figure on a mountain: how far up the route the climber
+   stands is done/total. Purely a second reading of numbers the ring card above
+   already announces, so the scene is aria-hidden and never speaks — it exists
+   because a number going from 2 to 3 doesn't feel like anything, and a figure
+   moving up a mountain does. Every colour is a token; the geometry lives in
+   habits.js so the route and the steps can't drift apart. */
+/* Every bit of the climber's motion is derived from one multiplier, so his
+   tempo is a single number rather than a dozen durations to keep in step.
+   1 is the original pace; 1.5 is half again as long. Set it to 2 for literal
+   half speed. The scene's UI — the bubble appearing, the flag planting — is
+   deliberately *not* scaled by it: those are interface, and slowing interface
+   down just makes it feel sluggish. The bubble's travel is the exception,
+   because it has to keep pace with the man it belongs to. */
+:root {
+  --climb-tempo: 1.5;
+  --climb-travel: calc(0.6s * var(--climb-tempo));
+  --climb-step: calc(300ms * var(--climb-tempo));
+  --climb-cheer: calc(900ms * var(--climb-tempo));
+  --climb-wave: calc(1100ms * var(--climb-tempo));
 }
-/* The finished tint (surface-2 → a soft accent wash) fades in via opacity,
-   which is the one property that transitions cleanly across the layer. */
-.today-card::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background:
-    linear-gradient(180deg, rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.08), rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.08));
+
+/* The band is what sticks; the scene inside it keeps its own bounded width.
+   The background has to be on the band and not the scene, because the scene's
+   sky is transparent — without it the habit list scrolls up through the
+   mountain. Bleeding out to the page gutter and padding it back means the
+   background spans the full column rather than leaving two strips of content
+   showing past the edges. */
+.climb-band {
+  position: sticky;
+  top: var(--topbar-height);
+  z-index: 3;
+  margin-inline: calc(var(--page-gutter) * -1);
+  padding: var(--space-2) var(--page-gutter);
+  background: var(--bg);
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+
+.climb {
+  position: relative;          /* the speech bubble is positioned against this */
+  width: 100%;
+  max-width: 480px;
+  margin-inline: auto;
+}
+.climb__scene {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+/* ---- the scene ---------------------------------------------------------- *
+   Depth comes from three layers and one consistent light direction, upper
+   left. The tokens don't contain a "distant haze" colour that works in both
+   themes, so distance is expressed as opacity against --bg instead: the far
+   range is the same fill as the massif at half strength, which recedes
+   correctly whether the page is light or dark. The lit facet borrows the
+   profile accent at low alpha rather than a white that would go black in dark
+   mode — it also quietly ties the mountain to whoever is signed in. */
+.climb__range { fill: var(--surface-2); opacity: 0.55; }
+.climb__mountain { fill: var(--surface-2); }
+.climb__shade { fill: var(--surface-sunk); opacity: 0.55; }
+/* Light, not a shape — low enough that it reads as the sun catching the face
+   rather than a coloured patch laid over it. */
+.climb__lit { fill: rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.09); }
+/* The fill sits only a shade off --bg in light mode, so the skyline is what
+   actually holds the silhouette together there. --border-strong reads in both
+   themes; --border disappeared against the light page. */
+.climb__outline {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Drawn from the same waypoint array the climber walks (see CLIMB_PATH), so
+   the dots always describe the route the figure actually takes. */
+.climb__route {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 1 7;
+}
+
+/* ---- the figure --------------------------------------------------------- */
+
+.climb__climber {
+  /* --climb-ease is rewritten before every move: an overshoot curve going up,
+     where the overshoot itself is the bounce on arrival, and the plain curve
+     coming back down, because an untick is a correction and shouldn't
+     celebrate. One transitioned property, so a second tick mid-climb retargets
+     from wherever the figure has got to instead of restarting. */
+  transition: transform var(--climb-travel) var(--climb-ease, var(--ease-out));
+}
+
+.climb__figure {
+  fill: none;
+  stroke: var(--profile-accent, var(--accent));
+  /* Heavier than it looks like it needs to be: at 480px wide the scene renders
+     one user unit to about 1.2px, and a 2-unit limb reads as a hairline. */
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.climb__head {
+  fill: var(--profile-accent, var(--accent));
+  stroke: none;
+}
+
+/* Each limb rotates about its own joint. SVG has no way to say "rotate about
+   the point this path starts from", so every limb is drawn with its joint at a
+   corner of its own fill box and the origin is written as that corner. Change a
+   limb's `d` and its origin has to be recomputed with it — the pairs are:
+     leg-back   M 0 -9  L -5 0    joint is the box's top right
+     leg-front  M 0 -9  L  5 0    joint is the box's top left
+     arm-back   M 0 -18 L -8 -27  joint is the box's bottom right
+     arm-front  M 0 -18 L  8 -12  joint is the box's top left
+
+   The arms are longer than they look like they need to be. At the first
+   length a raised arm ended level with the head and the two merged into one
+   blob — a cheer has to clear the head to read as a cheer. */
+.climb__limb { transform-box: fill-box; }
+.climb__limb--leg-back  { transform-origin: 100% 0%; }
+.climb__limb--leg-front { transform-origin: 0% 0%; }
+.climb__limb--arm-back  { transform-origin: 100% 100%; }
+.climb__limb--arm-front { transform-origin: 0% 0%; }
+
+/* Nothing here runs on idle. A figure that breathes forever in the corner of a
+   habit tracker is a distraction and a battery cost; he moves when something
+   happens and rests the rest of the time. */
+.climb__figure.is-climbing .climb__limb--leg-back  { animation: climb-swing-back  var(--climb-step) var(--ease-in-out) infinite; }
+.climb__figure.is-climbing .climb__limb--leg-front { animation: climb-swing-front var(--climb-step) var(--ease-in-out) infinite; }
+.climb__figure.is-climbing .climb__limb--arm-back  { animation: climb-reach-back  var(--climb-step) var(--ease-in-out) infinite; }
+.climb__figure.is-climbing .climb__limb--arm-front { animation: climb-reach-front var(--climb-step) var(--ease-in-out) infinite; }
+.climb__figure.is-climbing { animation: climb-bob var(--climb-step) var(--ease-in-out) infinite; }
+
+@keyframes climb-swing-back  { 0%, 100% { rotate: -14deg; } 50% { rotate: 16deg; } }
+@keyframes climb-swing-front { 0%, 100% { rotate: 16deg; }  50% { rotate: -14deg; } }
+@keyframes climb-reach-back  { 0%, 100% { rotate: 14deg; }  50% { rotate: -18deg; } }
+@keyframes climb-reach-front { 0%, 100% { rotate: -16deg; } 50% { rotate: 14deg; } }
+@keyframes climb-bob         { 0%, 100% { translate: 0 0; } 50% { translate: 0 -1.5px; } }
+
+/* ---- the celebration ---------------------------------------------------- *
+   Fired when he finishes a step upward, never when he comes back down — an
+   untick is a correction and celebrating it would be reading the day wrong.
+   One beat, in this order: crouch, hop, land, cheer, kiss. Splitting it across
+   several classes would mean several clocks to keep in step; instead every
+   part shares --climb-cheer and differs only in its keyframe percentages.
+
+   The scale on the jump is squash and stretch: he compresses before he leaves
+   the ground and stretches in the air. Without it a hop reads as the whole
+   figure being nudged upward rather than jumping. */
+.climb__figure.is-cheering {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;   /* his feet — he jumps off the ground, not his middle */
+  animation: climb-jump var(--climb-cheer) var(--ease-out);
+}
+.climb__figure.is-cheering .climb__limb--leg-back  { animation: cheer-leg-back  var(--climb-cheer) var(--ease-out); }
+.climb__figure.is-cheering .climb__limb--leg-front { animation: cheer-leg-front var(--climb-cheer) var(--ease-out); }
+.climb__figure.is-cheering .climb__limb--arm-back  { animation: cheer-arm-back  var(--climb-cheer) var(--ease-out); }
+.climb__figure.is-cheering .climb__limb--arm-front { animation: cheer-arm-front var(--climb-cheer) var(--ease-out); }
+
+@keyframes climb-jump {
+  0%   { translate: 0 0;    scale: 1 1; }
+  12%  { translate: 0 1px;  scale: 1.06 0.92; }   /* crouch */
+  30%  { translate: 0 -9px; scale: 0.96 1.06; }   /* airborne */
+  48%  { translate: 0 -10px; scale: 1 1; }        /* hangs for a beat at the top */
+  66%  { translate: 0 0;    scale: 1.05 0.94; }   /* lands */
+  78%  { translate: 0 0;    scale: 1 1; }
+  100% { translate: 0 0;    scale: 1 1; }
+}
+/* Legs part on the way up and straighten to land. Kept modest — much more and
+   the hop starts reading as a star jump. */
+@keyframes cheer-leg-back  { 0%, 100% { rotate: 0deg; } 30% { rotate: 16deg; } 66% { rotate: -6deg; } }
+@keyframes cheer-leg-front { 0%, 100% { rotate: 0deg; } 30% { rotate: -16deg; } 66% { rotate: 6deg; } }
+/* The back arm punches up and holds through the cheer. It already rests
+   up-and-left (it's the reaching arm), so it only needs about a third of a
+   turn to stand upright — rotating it further swings it across the body and
+   puts both arms on the same side, which reads as a stumble, not a cheer. */
+@keyframes cheer-arm-back {
+  0%   { rotate: 0deg; }
+  24%  { rotate: 18deg; }
+  70%  { rotate: 14deg; }
+  100% { rotate: 0deg; }
+}
+/* The front arm does the work: out and up into the V, in toward the face,
+   then thrown wide. The heart is released from JS at 78% — the frame where
+   the arm is fully extended — so the gesture and the thing it produces line
+   up instead of one trailing the other.
+
+   A straight two-point limb can't actually fold a hand to a mouth; it always
+   overshoots the head. The kiss reads from the sequence and the heart, not
+   from the anatomy, so the arm only has to swing inward and then snap out. */
+@keyframes cheer-arm-front {
+  0%   { rotate: 0deg; }
+  24%  { rotate: -82deg; }    /* up into the V, clear of the head */
+  52%  { rotate: -82deg; }
+  66%  { rotate: -150deg; }   /* in toward the face */
+  78%  { rotate: -40deg; }    /* thrown wide — the kiss leaves here */
+  100% { rotate: 0deg; }
+}
+
+/* The wave, for the greeting. Declared after the climb cycle so it wins the
+   front arm while it plays, and it settles back to rest rather than holding
+   the arm up. */
+.climb__figure.is-waving .climb__limb--arm-front {
+  animation: climb-wave var(--climb-wave) var(--ease-in-out);
+}
+@keyframes climb-wave {
+  0%   { rotate: 0deg; }
+  18%  { rotate: -104deg; }
+  38%  { rotate: -76deg; }
+  56%  { rotate: -112deg; }
+  74%  { rotate: -78deg; }
+  88%  { rotate: -100deg; }
+  100% { rotate: 0deg; }
+}
+
+/* The kisses themselves. Built in JS at his hand and self-removing, the same
+   pattern as the summit burst — a fresh node every time, so nothing is ever
+   restarted mid-flight. Never from scale(0): a kiss leaves the hand already
+   being something. */
+.climb__heart {
+  fill: var(--profile-accent, var(--accent));
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: climb-heart var(--heart-duration, 1400ms) var(--ease-out) forwards;
+}
+/* The 60% stop exists to hold the heart visible through the middle of its
+   flight. Fading straight from 16% to 100% on an ease-out curve front-loads
+   the whole fade, and it was all but gone by the halfway point. */
+@keyframes climb-heart {
+  0%   { transform: translate(0, 0) scale(0.5); opacity: 0; }
+  16%  { transform: translate(calc(var(--heart-x) * 0.2), -7px) scale(1.05); opacity: 0.95; }
+  60%  { transform: translate(calc(var(--heart-x) * 0.62), calc(var(--heart-y) * 0.58)) scale(0.98); opacity: 0.78; }
+  100% { transform: translate(var(--heart-x), var(--heart-y)) scale(0.8); opacity: 0; }
+}
+
+/* Planted only when the last habit is ticked. A transition rather than a
+   keyframe: untick that habit and the flag leaves the way it arrived. */
+.climb__flag {
   opacity: 0;
-  transition: opacity 0.6s ease;
+  transform: translateY(4px) scale(0.94);
+  transform-box: view-box;
+  transform-origin: 308px 34px;   /* the foot of the pole — it grows from where it's planted */
+  transition:
+    opacity 260ms var(--ease-out),
+    transform 260ms var(--ease-out);
+}
+.climb[data-complete='true'] .climb__flag {
+  opacity: 1;
+  transform: none;
+}
+.climb__flag-pole {
+  stroke: var(--profile-accent, var(--accent));
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.climb__flag-cloth { fill: var(--profile-accent, var(--accent)); }
+
+/* The summit burst. Circles are built in JS and remove themselves when they
+   end, so each burst is a fresh set of nodes — no keyframe ever has to be
+   restarted on an element that is already mid-flight. */
+.climb__particle {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: climb-particle var(--burst-duration, 600ms) var(--ease-out) forwards;
+}
+@keyframes climb-particle {
+  from { transform: translate(0, 0) scale(1); opacity: 1; }
+  to   { transform: translate(var(--burst-x), var(--burst-y)) scale(0.4); opacity: 0; }
+}
+
+/* ---- what he says ------------------------------------------------------- *
+   Positioned in pixels from JS against the scene's box rather than drawn in
+   the SVG, so the copy is real text with real tokens and real wrapping.
+   `translate` and `scale` are animated as separate properties on purpose: the
+   position rides the climber's own travel curve, while the entrance stays at
+   220ms. A single `transform` could only have one duration for both. */
+.climb__say {
+  max-width: 220px;
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+  white-space: nowrap;
+  opacity: 0;
   pointer-events: none;
 }
-.today-card[data-complete='true']::before { opacity: 1; }
-
-.today-card__ring {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 112px;
-  height: 112px;
-  flex-shrink: 0;
-}
-.today-card__ring svg { width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
-.today-card__ring circle { fill: none; stroke-width: 8; stroke-linecap: round; }
-.today-card__track { stroke: rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.15); }
-.today-card__arc {
-  stroke: var(--profile-accent, var(--accent));
-  transition: stroke-dashoffset 0.5s ease, stroke 0.6s ease;
-}
-.today-card[data-complete='true'] .today-card__arc { stroke: var(--positive); }
-
-.today-card__pct {
+.climb__say {
   position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-family: var(--font-display);
-  font-size: 20px;
-  font-weight: var(--weight-bold);
-  color: var(--profile-accent, var(--accent));
-  transition: color 0.6s ease;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  scale: 0.94;
+  /* The entrance stays at UI speed; only the travel follows the climber's
+     tempo, so the bubble never lags behind the head it belongs to. */
+  transition:
+    opacity 220ms var(--ease-out),
+    scale 220ms var(--ease-out),
+    translate var(--climb-travel) var(--climb-ease, var(--ease-out));
 }
-.today-card[data-complete='true'] .today-card__pct { color: var(--positive); }
+.climb__say[data-shown='true'] { opacity: 1; scale: 1; }
+/* Faster out than in — the system responding, not the user deciding. */
+.climb__say:not([data-shown='true']) {
+  transition-duration: 160ms, 160ms, var(--climb-travel);
+}
 
-.today-card__body { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
-.today-card__message {
-  font-family: var(--font-display);
-  font-size: 24px;
-  line-height: var(--leading-snug);
-  color: var(--text);
+/* The tail tracks the climber even when the bubble itself has been nudged back
+   inside the scene, so it always points at who is talking. */
+.climb__say::after {
+  content: '';
+  position: absolute;
+  left: var(--tail-x, 50%);
+  bottom: -5px;
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  background: var(--surface);
+  border-right: var(--border-width) solid var(--border-strong);
+  border-bottom: var(--border-width) solid var(--border-strong);
+  transform: rotate(45deg);
 }
-.today-card__meta {
-  font-size: 11px;
-  letter-spacing: var(--tracking-caps);
-  text-transform: uppercase;
-  color: var(--text-muted);
+
+/* Reduced motion: the climber still moves, because its height is the reading
+   and not decoration — it just arrives without the travel. The flag and the
+   bubbles appear the same way, the limbs and the wave don't run, and
+   fireSummitBurst never builds the particles at all. */
+@media (prefers-reduced-motion: reduce) {
+  .climb__climber,
+  .climb__flag,
+  .climb__say { transition: none; }
+  /* No limb cycle, no jump, no wave, and releaseHearts never builds a kiss.
+     He still changes position, because that is the reading. */
+  .climb__figure,
+  .climb__figure .climb__limb { animation: none; }
+  .climb__say { scale: 1; }
+}
+
+/* The habit list scrolls inside itself so the pinned mountain above can stay
+   put, but it deliberately does NOT set overscroll-behavior: contain. Contain
+   would trap the gesture: reach the bottom of the list and scrolling simply
+   stops, leaving the board and the charts below unreachable without finding a
+   gap to swipe in. Letting it chain means one continuous gesture runs the list
+   to its end and then carries on down the page, which is what a bounded list
+   inside a longer page should do. The mountain stays put through all of it —
+   it's sticky, so page scroll doesn't move it anyway.
+
+   The negative margin against the padding is so a card's hover lift, its
+   shadow and its focus ring have somewhere to go; overflow would otherwise
+   clip all three flush against the edge. */
+.habit-scroll {
+  max-height: min(58dvh, 620px);
+  overflow-y: auto;
+  padding: var(--space-2);
+  margin: calc(var(--space-2) * -1);
+  scroll-padding-block: var(--space-4);
+}
+.habit-scroll:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }
 
 .habit-grid {
@@ -2653,6 +2951,13 @@
 }
 
 .habit-card {
+  position: relative;
+  /* Makes the card its own stacking context, which is what lets the tint and
+     the rail sit at z-index -1: above the card's own background, below every
+     child. It's the only ordering that also survives the mobile grid, where
+     .habit-card__top is display: contents and its children are bare grid
+     items that never get a z-index of their own. */
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -2665,12 +2970,55 @@
     transform var(--duration-base) var(--ease-out),
     box-shadow var(--duration-base) var(--ease-out);
 }
-.habit-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-sm); }
+
+/* The completion tint, as an overlay rather than a background swap: opacity is
+   the one property that transitions cleanly across a layer, and a gradient
+   can't be transitioned at all. */
+.habit-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.08);
+  opacity: 0;
+  transition: opacity var(--duration-slow) var(--ease-out);
+  pointer-events: none;
+}
+.habit-card[data-done='true']::before { opacity: 1; }
+
+/* The accent rail on the left edge, drawn downward from the top when the habit
+   is ticked and wiped back up when it isn't. scaleY keeps it on the compositor;
+   animating height or width here would cost a layout on every tick. */
+.habit-card::after {
+  content: '';
+  position: absolute;
+  top: var(--space-2);
+  bottom: var(--space-2);
+  left: 0;
+  z-index: -1;
+  width: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--profile-accent, var(--accent));
+  transform: scaleY(0);
+  transform-origin: top;
+  transition: transform 260ms var(--ease-out);
+  pointer-events: none;
+}
+.habit-card[data-done='true']::after { transform: scaleY(1); }
+
 .habit-card[data-done='true'] {
   border-color: rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.45);
-  background:
-    linear-gradient(180deg, rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.07), transparent 40%),
-    var(--surface);
+}
+
+/* Gated: a tap on a touch screen fires a false hover that would otherwise
+   leave the card stuck in its lifted state. */
+@media (hover: hover) and (pointer: fine) {
+  .habit-card:hover {
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-sm);
+    transform: translateY(-2px);
+  }
 }
 .habit-card.is-celebrating { animation: card-lift 620ms var(--ease-out); }
 @keyframes card-lift {
@@ -2679,31 +3027,38 @@
   100% { transform: translateY(0) scale(1); }
 }
 
-/* The moment of completing: a quick scale bounce plus a soft green flash that
-   fades to transparent across the card. Unchecking never animates — only
-   completing does. The class is added after the write lands and removed once
-   both keyframes end (see announceCompletion in habits.js). Declared after
-   .is-celebrating so a streak-grow tick plays this instead of the card-lift;
-   the hero count still pops on its own. */
+/* The moment of completing: a quick scale bounce, fired once the write has
+   landed, so it reads as "saved" rather than "clicked". Unchecking never
+   animates — only completing does. Declared after .is-celebrating so a
+   streak-grow tick plays this instead of the card-lift; the hero count still
+   pops on its own.
+
+   The green flash that used to follow this is gone: the card now shifts to the
+   profile accent on completion, and a positive-green wash over the top of that
+   read as two different colours arguing about the same event. */
 .habit-card.is-completing {
-  animation:
-    habit-complete-scale 200ms var(--ease-out),
-    habit-complete-flash 400ms var(--ease-out) 200ms;
+  animation: habit-complete-scale 200ms var(--ease-out);
 }
 @keyframes habit-complete-scale {
   0%   { transform: scale(1); }
   50%  { transform: scale(1.04); }
   100% { transform: scale(1); }
 }
-@keyframes habit-complete-flash {
-  from { background-color: rgb(var(--positive-rgb) / 0.15); }
-  to   { background-color: transparent; }
-}
-/* Reduced motion: skip the bounce, the flash and the fades — the count change
-   alone carries the information, and the bar jumps straight to its width. */
+/* Reduced motion: skip the bounce and the fades — the count change alone
+   carries the information, and the bar jumps straight to its width. The
+   blanket rule in base.css already collapses every duration; this block says
+   so explicitly for the surfaces that matter most on this page. */
 @media (prefers-reduced-motion: reduce) {
-  .habit-card.is-completing { animation: none; }
+  .habit-card.is-completing,
+  .habit-card.is-celebrating,
+  .habit-card__streak-num.is-pulsing { animation: none; }
   .streak-hero__line.is-refreshing { animation: none; }
+  .habit-card,
+  .habit-card::before,
+  .habit-card::after,
+  .habit-card__name,
+  .habit-tick__mark,
+  .habit-tick__mark::before { transition: none; }
   .today-progress--bar .today-progress__fill,
   .today-progress--bar .today-progress__text { transition: none; }
 }
@@ -2726,7 +3081,11 @@
   font-size: var(--text-md);
   font-weight: var(--weight-semibold);
   overflow-wrap: anywhere;
+  transition: transform 220ms var(--ease-out);
 }
+/* A ticked habit steps aside from the rail — 4px is enough to register as
+   movement without opening a gap the eye has to re-measure. */
+.habit-card[data-done='true'] .habit-card__name { transform: translateX(4px); }
 .habit-card__target { font-size: var(--text-xs); color: var(--text-faint); }
 .habit-card__streak {
   display: flex;
@@ -2735,11 +3094,22 @@
   flex-shrink: 0;
 }
 .habit-card__streak-num {
+  /* inline-block so the pulse can scale it — transform doesn't apply to a
+     non-replaced inline box. */
+  display: inline-block;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--text-lg);
   font-weight: var(--weight-medium);
   color: var(--profile-accent, var(--accent));
+}
+/* One pulse, and only when the number actually went up. Restarted from JS the
+   same way the hero line is, so two quick ticks each get their own. */
+.habit-card__streak-num.is-pulsing { animation: streak-pulse 420ms var(--ease-out); }
+@keyframes streak-pulse {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.18); }
+  100% { transform: scale(1); }
 }
 .habit-card[data-streak='0'] .habit-card__streak-num { color: var(--text-faint); }
 .habit-card__streak-unit {
@@ -2769,6 +3139,8 @@
 }
 .habit-tick:hover:not(:disabled) { border-color: var(--profile-accent, var(--accent)); color: var(--text); }
 .habit-tick__mark {
+  position: relative;
+  isolation: isolate;
   display: grid;
   place-items: center;
   width: 26px;
@@ -2779,27 +3151,44 @@
   color: transparent;
   font-size: var(--text-xs);
   transition:
-    background var(--duration-base) var(--ease-out),
     border-color var(--duration-base) var(--ease-out),
-    color var(--duration-base) var(--ease-out),
-    transform var(--duration-base) var(--ease-out);
+    color 140ms var(--ease-out);
+}
+/* The fill is a ripple out of the middle rather than a background swap, so the
+   check has a direction. It starts at 0.2 and not 0 — even a ripple comes from
+   something. Sitting at z-index -1 inside the mark's own stacking context puts
+   it under the tick glyph without needing a wrapper element. */
+.habit-tick__mark::before {
+  content: '';
+  position: absolute;
+  inset: -2px;            /* covers the ring too, so the fill reads edge to edge */
+  z-index: -1;
+  border-radius: 50%;
+  background: var(--profile-accent, var(--accent));
+  opacity: 0;
+  transform: scale(0.2);
+  transition:
+    transform 240ms var(--ease-out),
+    opacity 180ms var(--ease-out);
+}
+.habit-card[data-done='true'] .habit-tick__mark::before {
+  opacity: 1;
+  transform: scale(1);
 }
 .habit-card[data-done='true'] .habit-tick {
   background: rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.1);
   border-color: transparent;
   color: var(--profile-accent, var(--accent));
 }
+/* The delay only applies on the way in, because a transition is read from the
+   state being entered: ticking lets the ripple land before the check fades on
+   top of it, unticking takes the check away at once. */
 .habit-card[data-done='true'] .habit-tick__mark {
-  background: var(--profile-accent, var(--accent));
   border-color: transparent;
   color: var(--text-on-accent);
-}
-.habit-tick.is-ticking .habit-tick__mark { animation: tick-pop 420ms var(--ease-out); }
-@keyframes tick-pop {
-  0%   { transform: scale(1); }
-  40%  { transform: scale(1.35); }
-  70%  { transform: scale(0.94); }
-  100% { transform: scale(1); }
+  transition:
+    border-color var(--duration-base) var(--ease-out),
+    color 140ms var(--ease-out) 160ms;
 }
 
 /* Seven days at a glance. */
@@ -3644,85 +4033,18 @@
    above 768px. All colours come from the token set — nothing hardcoded. */
 
 @media (max-width: 768px) {
-  /* ---- progress card replaces the bar and the streak hero --------------- */
+  /* ---- progress ---------------------------------------------------------- */
 
-  /* The arc card carries the same numbers, so the pill bar and the whole
-     streak hero fold away on small screens. The bar is retired at every size
-     (the desktop rule hides it too); this rule — same class pair, same
-     specificity, later in the file — keeps the status quo on small screens.
-     The bare #today-progress id can't be used: Tasks' own progress card
-     reuses that id. */
+  /* The bar is retired at every size (the desktop rule hides it too); this
+     rule — same class pair, same specificity, later in the file — keeps the
+     status quo on small screens. The bare #today-progress id can't be used:
+     Tasks' own progress card reuses that id.
+
+     The streak hero is deliberately NOT hidden here any more. It used to be,
+     because the ring card carried the count on small screens; with that card
+     gone, hiding it would leave a phone with no streak number anywhere — and
+     the streak is the thing the app is named after. */
   .today-progress.today-progress--bar { display: none; }
-  .streak-hero { display: none; }
-
-  .today-card {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: var(--space-4);
-    padding: var(--space-4);
-    border-radius: var(--radius-md);
-    background: var(--surface-2);
-    transition: background 0.6s ease;
-  }
-  /* The finished tint (surface-2 → a soft accent wash) fades in via opacity,
-     which is the one property that transitions cleanly across the layer. */
-  .today-card::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    background:
-      linear-gradient(180deg, rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.08), rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.08));
-    opacity: 0;
-    transition: opacity 0.6s ease;
-    pointer-events: none;
-  }
-  .today-card[data-complete='true']::before { opacity: 1; }
-
-  .today-card__ring {
-    position: relative;
-    display: grid;
-    place-items: center;
-    width: 92px;
-    height: 92px;
-    flex-shrink: 0;
-  }
-  .today-card__ring svg { width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
-  .today-card__ring circle { fill: none; stroke-width: 8; stroke-linecap: round; }
-  .today-card__track { stroke: rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.15); }
-  .today-card__arc {
-    stroke: var(--profile-accent, var(--accent));
-    transition: stroke-dashoffset 0.5s ease, stroke 0.6s ease;
-  }
-  .today-card[data-complete='true'] .today-card__arc { stroke: var(--positive); }
-
-  .today-card__pct {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    font-family: var(--font-display);
-    font-size: 18px;
-    font-weight: var(--weight-bold);
-    color: var(--profile-accent, var(--accent));
-    transition: color 0.6s ease;
-  }
-  .today-card[data-complete='true'] .today-card__pct { color: var(--positive); }
-
-  .today-card__body { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
-  .today-card__message {
-    font-family: var(--font-display);
-    font-size: 22px;
-    line-height: var(--leading-snug);
-    color: var(--text);
-  }
-  .today-card__meta {
-    font-size: 11px;
-    letter-spacing: var(--tracking-caps);
-    text-transform: uppercase;
-    color: var(--text-muted);
-  }
 
   /* ---- compact habit cards ---------------------------------------------- */
 
@@ -3795,9 +4117,6 @@
      the desktop rules themselves are untouched. */
   .habit-card[data-done='true'] {
     border-color: rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.45);
-    background:
-      linear-gradient(180deg, rgb(var(--profile-accent-rgb, var(--accent-rgb)) / 0.07), transparent 40%),
-      var(--surface);
   }
   .habit-tick:hover:not(:disabled) {
     border-color: var(--profile-accent, var(--accent));
@@ -3809,10 +4128,15 @@
     color: var(--profile-accent, var(--accent));
   }
   .habit-card[data-done='true'] .habit-tick__mark {
-    background: var(--profile-accent, var(--accent));
     border-color: transparent;
     color: var(--text-on-accent);
+    transition:
+      border-color var(--duration-base) var(--ease-out),
+      color 140ms var(--ease-out) 160ms;
   }
+  /* A tighter inset on the compact row, so the rail still reads as a rail
+     rather than a dash — 8px top and bottom would eat a 56px card. */
+  .habit-card::after { top: var(--space-1); bottom: var(--space-1); }
 
   @media (max-width: 470px) {
     /* Cap the check's column so the row's spare width reaches the name
@@ -3874,13 +4198,14 @@
   /* Reduced motion: everything above freezes at its final state. (The global
      base.css rule already covers this; the list exists to say so here.) */
   @media (prefers-reduced-motion: reduce) {
-    .today-card,
-    .today-card::before,
-    .today-card__arc,
-    .today-card__pct,
     .habit-card,
+    .habit-card::before,
+    .habit-card::after,
+    .habit-card__name,
     .habit-card__chevron-icon,
     .habit-card__streak,
+    .habit-tick__mark,
+    .habit-tick__mark::before,
     .week-dots,
     .contrib {
       transition: none;
