@@ -13,9 +13,9 @@
     href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
     rel="stylesheet" />
 
-  <link rel="stylesheet" href="css/tokens.css?v=40" />
-  <link rel="stylesheet" href="css/base.css?v=40" />
-  <link rel="stylesheet" href="css/components.css?v=40" />
+  <link rel="stylesheet" href="css/tokens.css?v=41" />
+  <link rel="stylesheet" href="css/base.css?v=41" />
+  <link rel="stylesheet" href="css/components.css?v=41" />
 </head>
 
 <body>
@@ -37,13 +37,16 @@
 
     <div id="streak-hero"></div>
 
-    <!-- The climb: the same fraction as the ring above, read as height. The
-         mountain and the flag are static; renderClimb writes the route's `d`
-         and the climber's transform from the CLIMB_PATH waypoints in
-         habits.js, so the dotted line and the steps can never disagree. The
-         scene repeats what the ring card already announces, so it is
-         aria-hidden — one status region per reading, not two. The [hidden]
-         attribute only covers the pre-render moment. -->
+    <!-- The climb: today's progress read as height, and the only visual read
+         of it since the percentage ring was retired. The mountain and the flag
+         are static; renderClimb writes the route's `d` and the climber's
+         transform from the CLIMB_PATH waypoints in habits.js, so the dotted
+         line and the steps can never disagree.
+
+         aria-hidden because a drawing of a man on a hill announces nothing
+         useful — the spoken read is the live region above. The band around it
+         is what sticks under the top bar; the [hidden] attribute on the scene
+         only covers the pre-render moment. -->
     <div class="climb-band">
     <div class="climb" id="climb" hidden>
       <svg class="climb__scene" viewBox="0 0 400 200" aria-hidden="true" focusable="false">
@@ -123,10 +126,10 @@
     </div>
 
     <!-- The habit list scrolls inside itself so the mountain above can stay
-         put. overscroll-behavior stops the gesture chaining to the page when
-         you hit either end, which is what "separate scroll" has to mean on a
-         phone or it just feels broken. Labelled and focusable so a keyboard
-         can reach the scroll region like any other. -->
+         put, but the gesture still chains to the page at either end — run out
+         of habits and the same swipe carries on into the board and the charts.
+         Labelled and focusable so a keyboard can reach the scroll region like
+         any other. -->
     <section class="stack" aria-labelledby="today-title">
       <h2 class="sr-only" id="today-title">Today’s habits</h2>
       <div class="habit-scroll" id="habit-scroll" tabindex="0" role="group" aria-labelledby="today-title">
@@ -225,7 +228,7 @@
   </dialog>
 
   <script type="module">
-    import { initHabitsPage } from './js/habits.js?v=40';
+    import { initHabitsPage } from './js/habits.js?v=41';
     initHabitsPage();
   </script>
 </body>

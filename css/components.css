@@ -719,8 +719,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .confetti-burst,
-  .confetti-particle { display: none !important; }
+  :root[data-motion='system'] .confetti-burst,
+  :root[data-motion='system'] .confetti-particle { display: none !important; }
 }
 
 @media (max-width: 480px) {
@@ -1411,7 +1411,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .infotip__bubble { transition: none; }
+  :root[data-motion='system'] .infotip__bubble { transition: none; }
 }
 
 /* ---- verdict ------------------------------------------------------------- */
@@ -2909,14 +2909,14 @@
    bubbles appear the same way, the limbs and the wave don't run, and
    fireSummitBurst never builds the particles at all. */
 @media (prefers-reduced-motion: reduce) {
-  .climb__climber,
-  .climb__flag,
-  .climb__say { transition: none; }
+  :root[data-motion='system'] .climb__climber,
+  :root[data-motion='system'] .climb__flag,
+  :root[data-motion='system'] .climb__say { transition: none; }
   /* No limb cycle, no jump, no wave, and releaseHearts never builds a kiss.
      He still changes position, because that is the reading. */
-  .climb__figure,
-  .climb__figure .climb__limb { animation: none; }
-  .climb__say { scale: 1; }
+  :root[data-motion='system'] .climb__figure,
+  :root[data-motion='system'] .climb__figure .climb__limb { animation: none; }
+  :root[data-motion='system'] .climb__say { scale: 1; }
 }
 
 /* The habit list scrolls inside itself so the pinned mountain above can stay
@@ -3049,18 +3049,18 @@
    blanket rule in base.css already collapses every duration; this block says
    so explicitly for the surfaces that matter most on this page. */
 @media (prefers-reduced-motion: reduce) {
-  .habit-card.is-completing,
-  .habit-card.is-celebrating,
-  .habit-card__streak-num.is-pulsing { animation: none; }
-  .streak-hero__line.is-refreshing { animation: none; }
-  .habit-card,
-  .habit-card::before,
-  .habit-card::after,
-  .habit-card__name,
-  .habit-tick__mark,
-  .habit-tick__mark::before { transition: none; }
-  .today-progress--bar .today-progress__fill,
-  .today-progress--bar .today-progress__text { transition: none; }
+  :root[data-motion='system'] .habit-card.is-completing,
+  :root[data-motion='system'] .habit-card.is-celebrating,
+  :root[data-motion='system'] .habit-card__streak-num.is-pulsing { animation: none; }
+  :root[data-motion='system'] .streak-hero__line.is-refreshing { animation: none; }
+  :root[data-motion='system'] .habit-card,
+  :root[data-motion='system'] .habit-card::before,
+  :root[data-motion='system'] .habit-card::after,
+  :root[data-motion='system'] .habit-card__name,
+  :root[data-motion='system'] .habit-tick__mark,
+  :root[data-motion='system'] .habit-tick__mark::before { transition: none; }
+  :root[data-motion='system'] .today-progress--bar .today-progress__fill,
+  :root[data-motion='system'] .today-progress--bar .today-progress__text { transition: none; }
 }
 
 .habit-card__top { display: flex; align-items: flex-start; gap: var(--space-4); }
@@ -4033,6 +4033,32 @@
    above 768px. All colours come from the token set — nothing hardcoded. */
 
 @media (max-width: 768px) {
+  /* ---- the streak, compressed -------------------------------------------- *
+     The hero is the app's signature, so it stays on a phone — but at desktop
+     size it ate roughly 250px above the fold and the mountain is meant to be
+     what you look at. Compressed to a single ~90px row: the ring with the
+     number in it, and a label.
+
+     The title and the today line are dropped rather than shrunk. Both say the
+     same kind of thing the climber says in his speech bubble a few pixels
+     below, and three restatements of "almost there" on one small screen is
+     two too many. The spoken progress read is unaffected — that lives in the
+     off-screen live region, not here. */
+  .streak-hero {
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    flex-wrap: nowrap;
+  }
+  .streak-hero__dial { width: 64px; height: 64px; }
+  /* The ring is drawn in a 168-unit viewBox, so its stroke scales with the
+     box — no stroke-width change needed to keep it in proportion. */
+  .streak-hero__count { font-size: var(--text-lg); letter-spacing: -0.03em; }
+  .streak-hero__unit { display: none; }   /* the label beside it already says it */
+  .streak-hero__body { flex: 1 1 auto; gap: 0; }
+  .streak-hero__title,
+  .streak-hero__line { display: none; }
+
   /* ---- progress ---------------------------------------------------------- */
 
   /* The bar is retired at every size (the desktop rule hides it too); this
@@ -4198,16 +4224,16 @@
   /* Reduced motion: everything above freezes at its final state. (The global
      base.css rule already covers this; the list exists to say so here.) */
   @media (prefers-reduced-motion: reduce) {
-    .habit-card,
-    .habit-card::before,
-    .habit-card::after,
-    .habit-card__name,
-    .habit-card__chevron-icon,
-    .habit-card__streak,
-    .habit-tick__mark,
-    .habit-tick__mark::before,
-    .week-dots,
-    .contrib {
+    :root[data-motion='system'] .habit-card,
+    :root[data-motion='system'] .habit-card::before,
+    :root[data-motion='system'] .habit-card::after,
+    :root[data-motion='system'] .habit-card__name,
+    :root[data-motion='system'] .habit-card__chevron-icon,
+    :root[data-motion='system'] .habit-card__streak,
+    :root[data-motion='system'] .habit-tick__mark,
+    :root[data-motion='system'] .habit-tick__mark::before,
+    :root[data-motion='system'] .week-dots,
+    :root[data-motion='system'] .contrib {
       transition: none;
     }
   }

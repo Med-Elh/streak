@@ -9,7 +9,7 @@
  */
 
 import Chart from 'https://esm.sh/chart.js@4/auto';
-import { formatMoney, compactMoney } from './ui.js?v=40';
+import { formatMoney, compactMoney } from './ui.js?v=41';
 
 /* Registry of live charts, so a theme flip can rebuild them with new colours. */
 const live = new Map();
@@ -99,8 +99,12 @@ function baseOptions(c, { legend = false } = {}) {
   };
 }
 
+/* Charts keep their own copy rather than importing from ui.js, so the two have
+   to stay in step — see the long note on the exported one there. Motion plays
+   unless <html data-motion="system"> hands control back to the OS. */
 function prefersReducedMotion() {
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  return document.documentElement.dataset.motion === 'system'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
 /** Replaces whatever chart was on this canvas. Canvases are reused, not rebuilt. */

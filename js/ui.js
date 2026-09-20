@@ -3,8 +3,8 @@
  * Section modules never import each other — anything they share lives here.
  */
 
-import { startPresenceHeartbeat, initPresenceStrip } from './presence.js?v=40';
-import { initChat } from './chat.js?v=40';
+import { startPresenceHeartbeat, initPresenceStrip } from './presence.js?v=41';
+import { initChat } from './chat.js?v=41';
 
 const THEME_KEY = 'streak.theme';
 
@@ -40,8 +40,29 @@ export function clear(node) {
 
 /* --------------------------------------------------------------- motion -- */
 
+/**
+ * Whether to hold back motion.
+ *
+ * This app ignores the OS "reduce motion" setting by default. That is a
+ * deliberate override, not an oversight: the animations here are the product —
+ * the climber's height *is* today's progress — and on a machine with the
+ * system setting on, the app arrived with every one of them switched off.
+ *
+ * To hand control back to the operating system, set the attribute on <html>:
+ *
+ *     <html data-motion="system">
+ *
+ * or at runtime, from the console:
+ *
+ *     document.documentElement.dataset.motion = 'system';
+ *
+ * The same attribute gates every reduced-motion block in the CSS, so the
+ * stylesheets and this function can never disagree about which mode is on.
+ * Absent the attribute, motion always plays.
+ */
 export function prefersReducedMotion() {
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  return document.documentElement.dataset.motion === 'system'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
 /**

@@ -203,10 +203,27 @@ th.num {
 
 /* ---------- motion ------------------------------------------------------ */
 
+/* Motion is ON by default, whatever the operating system says.
+ *
+ * This app deliberately overrides the OS "reduce motion" preference. The
+ * animations are the product here, not decoration — the climber's height is
+ * how today's progress is read — and with the system setting on, the app came
+ * up with all of it switched off.
+ *
+ * Every reduced-motion block in this project is gated on one attribute, so
+ * putting the operating system back in charge is a single edit:
+ *
+ *     <html data-motion="system">
+ *
+ * With that attribute present, this rule and its counterparts in
+ * components.css take effect exactly as they did before, and
+ * prefersReducedMotion() in ui.js and charts.js agrees with them. With the
+ * attribute absent — the default — motion always plays.
+ */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  :root[data-motion='system'] *,
+  :root[data-motion='system'] *::before,
+  :root[data-motion='system'] *::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
