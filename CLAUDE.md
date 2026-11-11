@@ -51,6 +51,8 @@ One shared app, several **profiles**. A profile is a person (starts with two, mo
 ├── trading.html
 ├── backtest.html
 ├── settings.html
+├── manifest.json           # Installable app (Add to Home Screen): name, icons, colours
+├── sw.js                   # Service worker: network first, offline fallback only. Never caches Supabase
 ├── sql/                    # Standalone migrations, run in the Supabase editor
 ├── css/
 │   ├── tokens.css          # Design tokens only — colors, type, spacing, radii
@@ -75,11 +77,12 @@ One shared app, several **profiles**. A profile is a person (starts with two, mo
 │   ├── charts.js           # All Chart.js config in one place
 │   ├── constants.js        # Dropdown option lists (sessions, setups, emotions…)
 │   └── ui.js               # Shared helpers: modal, toast, empty state, format
-└── assets/
+└── assets/                 # App icons (icon-192/512, maskable, apple-touch, favicon)
 ```
 
 **Rules:**
 - One JS module per section. No cross-imports between section modules — shared logic goes in `ui.js` or `constants.js`.
+- Every page `<head>` carries the same installable-app block right under `<title>` (manifest, icons, theme-color, service worker). A new page copies it. Those theme-color hex values are the one allowed exception to the tokens-only colour rule, because the browser reads them before CSS loads.
 - Every page imports `auth.js` first and redirects to `index.html` if there's no session.
 - Never hardcode a dropdown option inside a page — it comes from `constants.js`.
 
