@@ -266,6 +266,11 @@ th.num {
   }
   .btn--icon { width: 44px; }
   .swatch { width: 44px; height: 44px; }
+  /* iPhone Safari zooms the whole page into any field under 16px and leaves
+     it zoomed after you're done typing. */
+  .input,
+  .select,
+  .textarea { font-size: max(16px, var(--text-base)); }
   .task-row input[type='checkbox'],
   .rule input[type='checkbox'] {
     width: 24px;

@@ -6,17 +6,17 @@
  * and the deadline rather than a checkbox.
  */
 
-import { supabase, describeError } from './supabase.js?v=42';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=42';
-import { requireActiveProfile } from './profiles.js?v=42';
+import { supabase, describeError } from './supabase.js?v=43';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=43';
+import { requireActiveProfile } from './profiles.js?v=43';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
   statRing, formatDate, todayISO, beat,
   applyProfileTheme,
-} from './ui.js?v=42';
-import { PRIORITIES, OBJECTIVE_STATUSES, OBJECTIVE_UNITS, options, labelFor } from './constants.js?v=42';
+} from './ui.js?v=43';
+import { PRIORITIES, OBJECTIVE_STATUSES, OBJECTIVE_UNITS, options, labelFor } from './constants.js?v=43';
 
-import { mountGreeting } from './greetings.js?v=42';
+import { mountGreeting } from './greetings.js?v=43';
 
 const state = {
   profile: null,
@@ -24,9 +24,112 @@ const state = {
   objectives: [],
   filter: 'all',      // 'all' | 'today' | 'overdue' | 'done'
   editingObjective: null,
+  notes: [],          // task_audio rows for this profile's tasks
+  notesReady: false,  // false until they load; the mic stays hidden if they can't
+  urls: new Map(),    // storage path → { url, expires }, signed URLs for playback
+  recording: null,    // { taskId, phase: 'starting' | 'recording' | 'saving', … }
 };
 
 let refs = {};
+
+/* ----------------------------------------------------------- voice notes -- */
+
+const AUDIO_BUCKET = 'task-audio';
+export const MAX_RECORDING_MS = 2 * 60 * 1000;
+/* A tap on the mic followed straight away by a tap on stop is a mistake, not
+   a note. Anything shorter than this is dropped rather than saved. */
+const MIN_RECORDING_MS = 700;
+const SIGNED_URL_SECONDS = 60 * 60;
+
+/*
+ * In order of preference. AAC in mp4 comes first even where webm is available
+ * because it is the one format every browser can play back: a note recorded on
+ * a laptop has to play on the iPhone, and older iOS Safari can't decode webm.
+ * iPhone Safari only offers mp4, so it lands on the first two either way.
+ */
+const RECORDING_TYPES = [
+  'audio/mp4;codecs=mp4a.40.2',
+  'audio/mp4',
+  'audio/webm;codecs=opus',
+  'audio/webm',
+  'audio/ogg;codecs=opus',
+];
+
+const EXTENSIONS = {
+  'audio/mp4': 'm4a',
+  'audio/x-m4a': 'm4a',
+  'audio/aac': 'aac',
+  'audio/webm': 'webm',
+  'audio/ogg': 'ogg',
+  'audio/mpeg': 'mp3',
+  'audio/wav': 'wav',
+};
+
+/* PostgREST's "no such table": the voice-notes migration hasn't been run. */
+const MISSING_TABLE = new Set(['42P01', 'PGRST205']);
+
+/** The first type this browser's MediaRecorder will produce, or '' to let it choose. */
+export function pickRecordingType(isSupported = (type) => window.MediaRecorder?.isTypeSupported?.(type)) {
+  for (const type of RECORDING_TYPES) {
+    try {
+      if (isSupported(type)) return type;
+    } catch {
+      /* Some builds throw instead of answering false. */
+    }
+  }
+  return '';
+}
+
+/**
+ * 'audio/mp4;codecs=mp4a.40.2' → 'audio/mp4'. The bucket's allow-list is
+ * matched against the bare type, and an empty one (Safari has reported '' for
+ * recorder.mimeType) is what iPhones actually record.
+ */
+export function baseMimeType(type) {
+  return String(type ?? '').split(';')[0].trim().toLowerCase() || 'audio/mp4';
+}
+
+export function extensionFor(type) {
+  return EXTENSIONS[baseMimeType(type)] ?? 'audio';
+}
+
+/** 42_400 → '0:42'. Minutes are never padded; two minutes is the ceiling. */
+export function formatDuration(ms) {
+  const seconds = Math.max(0, Math.round(Number(ms) / 1000) || 0);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function spokenDuration(ms) {
+  const seconds = Math.max(0, Math.round(Number(ms) / 1000) || 0);
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  const parts = [];
+  if (m) parts.push(`${m} minute${m === 1 ? '' : 's'}`);
+  if (s || !m) parts.push(`${s} second${s === 1 ? '' : 's'}`);
+  return parts.join(' ');
+}
+
+function notesFor(taskId) {
+  return state.notes.filter((n) => n.task_id === taskId);
+}
+
+/** Storage failures arrive as plain messages; the common ones get a fix attached. */
+function storageMessage(error, fallback) {
+  const text = String(error?.message ?? '');
+  if (/bucket not found/i.test(text)) {
+    return 'The task-audio storage bucket doesn’t exist yet. Run the latest migration in the Supabase SQL editor.';
+  }
+  if (/row-level security|unauthori[sz]ed|403/i.test(text)) {
+    return 'Storage refused that. Run the latest migration in the Supabase SQL editor to add the task-audio policies.';
+  }
+  if (/mime type/i.test(text)) {
+    return 'Storage doesn’t accept this browser’s audio format. Run the latest migration to update the bucket’s allowed types.';
+  }
+  if (/maximum allowed size|too large|payload/i.test(text)) {
+    return 'That recording is larger than the 5 MB the bucket allows.';
+  }
+  return describeError(error, fallback);
+}
 
 /* ----------------------------------------------------------------- logic -- */
 /* Pure, exported, and tested — the date arithmetic is where this kind of page
@@ -144,6 +247,49 @@ async function fetchObjectives() {
   return data ?? [];
 }
 
+/** Every voice note on this profile's tasks, in one query through the join. */
+async function fetchNotes() {
+  const { data, error } = await supabase
+    .from('task_audio')
+    .select('id, task_id, path, mime_type, duration_ms, created_at, tasks!inner(profile_id)')
+    .eq('tasks.profile_id', state.profile.id)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    if (MISSING_TABLE.has(error.code)) {
+      throw new Error('Voice notes need the latest migration. Run it in the Supabase SQL editor, then reload.');
+    }
+    throw new Error(describeError(error, 'Couldn’t load your voice notes.'));
+  }
+  return (data ?? []).map(({ tasks, ...note }) => note);
+}
+
+function freshUrl(path) {
+  const entry = state.urls.get(path);
+  return entry && entry.expires > Date.now() ? entry.url : null;
+}
+
+/**
+ * Signed ahead of time, in one batch, because iPhone Safari only lets audio
+ * start inside the tap that asked for it. Awaiting a network round trip
+ * between the tap and play() is exactly what makes it refuse.
+ */
+async function signUrls(paths) {
+  const missing = [...new Set(paths)].filter((p) => !freshUrl(p));
+  if (!missing.length) return;
+
+  const { data, error } = await supabase.storage
+    .from(AUDIO_BUCKET)
+    .createSignedUrls(missing, SIGNED_URL_SECONDS);
+  if (error) throw new Error(storageMessage(error, 'Couldn’t get your voice notes ready to play.'));
+
+  // A minute's margin so a URL never expires between the tap and the request.
+  const expires = Date.now() + (SIGNED_URL_SECONDS - 60) * 1000;
+  for (const row of data ?? []) {
+    if (row.signedUrl && !row.error) state.urls.set(row.path, { url: row.signedUrl, expires });
+  }
+}
+
 /* ----------------------------------------------------------- render tasks -- */
 
 function renderTasks() {
@@ -203,6 +349,7 @@ function taskRow(task) {
   const card = el('div', {
     class: 'task-card',
     dataset: {
+      taskId: task.id,
       done: String(task.done),
       priority: task.priority,
       overdue: String(overdue),
@@ -237,16 +384,136 @@ function taskRow(task) {
           : null,
       ]),
     ]),
-    el('div', { class: 'task-card__actions' }, el('button', {
-      class: 'btn btn--ghost btn--sm',
-      type: 'button',
-      text: 'Delete',
-      'aria-label': `Delete ${task.title}`,
-      onclick: () => removeTask(task),
-    })),
+    el('div', { class: 'task-card__actions' }, [
+      state.notesReady ? micButton(task) : null,
+      el('button', {
+        class: 'btn btn--ghost btn--sm',
+        type: 'button',
+        text: 'Delete',
+        'aria-label': `Delete ${task.title}`,
+        onclick: () => removeTask(task),
+      }),
+    ]),
   );
 
+  // Notes and the recorder get a row of their own under the title, rather
+  // than sharing the title's column: on a phone that column is ~130px once
+  // the checkbox and buttons have their share, too narrow for either.
+  const recording = state.recording?.taskId === task.id;
+  const notes = voiceNotes(task);
+  if (notes || recording) {
+    card.append(el('div', { class: 'task-card__extras' }, [
+      notes,
+      recording ? recorderPanel() : null,
+    ]));
+  }
+
+  if (recording) card.dataset.recording = 'true';
   return card;
+}
+
+const MIC_SVG = `
+<svg viewBox="0 0 24 24" aria-hidden="true">
+  <rect x="9" y="3" width="6" height="11" rx="3" />
+  <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor"
+    stroke-width="1.9" stroke-linecap="round" />
+</svg>`;
+
+const PLAY_SVG = '<svg class="voice-note__glyph voice-note__glyph--play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5Z"/></svg>';
+const PAUSE_SVG = '<svg class="voice-note__glyph voice-note__glyph--pause" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="5" width="4" height="14" rx="1.2"/><rect x="13.5" y="5" width="4" height="14" rx="1.2"/></svg>';
+
+function micButton(task) {
+  const busyElsewhere = Boolean(state.recording && state.recording.taskId !== task.id);
+  const button = el('button', {
+    class: 'btn btn--icon btn--sm mic-button',
+    type: 'button',
+    'aria-label': `Record a voice note for ${task.title}`,
+    title: 'Record a voice note',
+    disabled: busyElsewhere || state.recording?.taskId === task.id,
+    onclick: () => startRecording(task),
+  });
+  button.innerHTML = MIC_SVG;
+  return button;
+}
+
+function voiceNotes(task) {
+  const notes = notesFor(task.id);
+  if (!notes.length) return null;
+  return el('ul', { class: 'voice-notes', 'aria-label': 'Voice notes' }, notes.map(noteChip));
+}
+
+function noteChip(note) {
+  const play = el('button', {
+    class: 'voice-note__play',
+    type: 'button',
+    onclick: () => togglePlayback(note),
+  });
+  play.innerHTML = `${PLAY_SVG}${PAUSE_SVG}`;
+  play.append(el('span', { class: 'voice-note__time', text: formatDuration(note.duration_ms) }));
+
+  const chip = el('li', { class: 'voice-note', dataset: { noteId: note.id } }, [
+    play,
+    el('button', {
+      class: 'voice-note__delete',
+      type: 'button',
+      text: '×',
+      'aria-label': 'Delete this voice note',
+      title: 'Delete voice note',
+      onclick: () => removeNote(note),
+    }),
+  ]);
+
+  paintChip(chip, note);
+  return chip;
+}
+
+/** The recorder, in place of nothing, inside the card it is recording for. */
+function recorderPanel() {
+  const rec = state.recording;
+
+  if (rec.phase === 'saving') {
+    return el('div', { class: 'recorder recorder--saving', role: 'status' }, [
+      el('span', { class: 'btn__spinner', 'aria-hidden': 'true' }),
+      el('span', { text: 'Saving voice note…' }),
+    ]);
+  }
+
+  if (rec.phase === 'starting') {
+    return el('div', { class: 'recorder', role: 'status' }, [
+      el('span', { class: 'recorder__label', text: 'Waiting for the microphone…' }),
+      el('button', {
+        class: 'btn btn--ghost btn--sm',
+        type: 'button',
+        text: 'Cancel',
+        onclick: () => stopRecording({ cancel: true }),
+      }),
+    ]);
+  }
+
+  const elapsed = rec.startedAt ? performance.now() - rec.startedAt : 0;
+  return el('div', { class: 'recorder', role: 'group', 'aria-label': 'Recording a voice note' }, [
+    el('span', { class: 'recorder__dot', 'aria-hidden': 'true' }),
+    el('span', { class: 'recorder__clock' }, [
+      el('span', { class: 'recorder__time', text: formatDuration(Math.floor(elapsed / 1000) * 1000) }),
+      el('span', { class: 'recorder__cap', text: ` / ${formatDuration(MAX_RECORDING_MS)}` }),
+    ]),
+    el('span', { class: 'recorder__track', 'aria-hidden': 'true' },
+      el('span', { class: 'recorder__fill', style: `width: ${(elapsed / MAX_RECORDING_MS) * 100}%` })),
+    el('span', { class: 'recorder__buttons' }, [
+      el('button', {
+        class: 'btn btn--primary btn--sm',
+        type: 'button',
+        text: 'Stop and save',
+        onclick: () => stopRecording(),
+      }),
+      el('button', {
+        class: 'btn btn--ghost btn--sm',
+        type: 'button',
+        text: 'Discard',
+        onclick: () => stopRecording({ cancel: true }),
+      }),
+    ]),
+  ]);
 }
 
 /** "3 of 7 done today" — the thing you actually want to know at a glance. */
@@ -416,6 +683,356 @@ function objectiveCard(objective) {
   return card;
 }
 
+/* -------------------------------------------------------------- recording -- */
+
+function micError(error) {
+  switch (error?.name) {
+    case 'NotAllowedError':
+    case 'SecurityError':
+      return 'Microphone access is blocked. Allow it for this site in your browser settings, then try again.';
+    case 'NotFoundError':
+    case 'OverconstrainedError':
+      return 'No microphone found. Connect one and try again.';
+    case 'NotReadableError':
+      return 'Another app is using the microphone. Close it and try again.';
+    default:
+      return `Couldn’t start the microphone${error?.message ? `: ${error.message}` : '.'}`;
+  }
+}
+
+function focusIn(taskId, selector) {
+  const card = [...document.querySelectorAll('.task-card')].find((c) => c.dataset.taskId === taskId);
+  card?.querySelector(selector)?.focus();
+}
+
+async function startRecording(task) {
+  if (state.recording) {
+    toast('Finish the voice note you’re recording first.', { type: 'info' });
+    return;
+  }
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+    toast('This browser can’t record audio. Open Streak. in Safari or Chrome and try again.', { type: 'error' });
+    return;
+  }
+
+  stopPlayback();
+
+  // Claimed before the permission prompt, so a second tap can't open a second one.
+  const rec = { taskId: task.id, phase: 'starting', chunks: [] };
+  state.recording = rec;
+  renderTasks();
+
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (error) {
+    if (state.recording === rec) state.recording = null;
+    renderTasks();
+    toast(micError(error), { type: 'error' });
+    return;
+  }
+
+  // Discarded while the prompt was up.
+  if (state.recording !== rec) {
+    stream.getTracks().forEach((t) => t.stop());
+    return;
+  }
+
+  const type = pickRecordingType();
+  let recorder;
+  try {
+    recorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+  } catch (error) {
+    stream.getTracks().forEach((t) => t.stop());
+    state.recording = null;
+    renderTasks();
+    toast(`Couldn’t start recording on this device${error?.message ? `: ${error.message}` : '.'}`, { type: 'error' });
+    return;
+  }
+
+  Object.assign(rec, { phase: 'recording', stream, recorder, type, task });
+  recorder.addEventListener('dataavailable', (event) => {
+    if (event.data?.size) rec.chunks.push(event.data);
+  });
+  recorder.addEventListener('stop', () => finishRecording(rec));
+  recorder.addEventListener('error', (event) => {
+    rec.error = event.error?.message || 'the recorder stopped unexpectedly';
+  });
+
+  // No timeslice: one blob at the end. Safari's fragmented-mp4 chunks have
+  // produced files that won't play back; a single final chunk always does.
+  recorder.start();
+  rec.startedAt = performance.now();
+  rec.ticker = setInterval(() => tick(rec), 200);
+
+  renderTasks();
+  focusIn(task.id, '.recorder .btn--primary');
+}
+
+/** Moves the clock and the bar without re-rendering the list, and enforces the cap. */
+function tick(rec) {
+  const elapsed = performance.now() - rec.startedAt;
+  if (elapsed >= MAX_RECORDING_MS) {
+    stopRecording({ reason: 'cap' });
+    return;
+  }
+  const panel = document.querySelector('.task-card[data-recording="true"] .recorder');
+  if (!panel) return;
+  const time = panel.querySelector('.recorder__time');
+  const fill = panel.querySelector('.recorder__fill');
+  if (time) time.textContent = formatDuration(Math.floor(elapsed / 1000) * 1000);
+  if (fill) fill.style.width = `${Math.min(elapsed / MAX_RECORDING_MS, 1) * 100}%`;
+}
+
+function stopRecording({ cancel = false, reason } = {}) {
+  const rec = state.recording;
+  if (!rec) return;
+
+  if (rec.phase === 'starting') {
+    state.recording = null;
+    renderTasks();
+    return;
+  }
+  if (rec.phase !== 'recording') return;
+
+  clearInterval(rec.ticker);
+  rec.cancelled = cancel;
+  rec.capped = reason === 'cap';
+  rec.elapsed = Math.min(performance.now() - rec.startedAt, MAX_RECORDING_MS);
+  rec.phase = cancel ? 'recording' : 'saving';
+
+  // stop() flushes the last dataavailable, then fires 'stop' → finishRecording.
+  if (rec.recorder.state !== 'inactive') rec.recorder.stop();
+  else finishRecording(rec);
+
+  if (!cancel) renderTasks();
+}
+
+async function finishRecording(rec) {
+  if (rec.finished) return;
+  rec.finished = true;
+  clearInterval(rec.ticker);
+  // Releasing the tracks is what turns the browser's recording indicator off.
+  rec.stream?.getTracks().forEach((t) => t.stop());
+
+  // Stopped by the browser rather than by us — a call came in, the app was
+  // backgrounded. Keep what was recorded rather than lose it.
+  if (rec.elapsed === undefined) rec.elapsed = Math.min(performance.now() - rec.startedAt, MAX_RECORDING_MS);
+
+  const done = (message, type = 'info') => {
+    if (state.recording === rec) state.recording = null;
+    renderTasks();
+    focusIn(rec.taskId, '.mic-button');
+    if (message) toast(message, { type });
+  };
+
+  if (rec.cancelled) return done('Voice note discarded.');
+  if (rec.elapsed < MIN_RECORDING_MS) return done('That was too short to keep. Tap the mic and speak, then stop.');
+
+  const mime = baseMimeType(rec.recorder.mimeType || rec.type || rec.chunks[0]?.type);
+  const blob = new Blob(rec.chunks, { type: mime });
+  if (!blob.size) {
+    return done(`Nothing was recorded${rec.error ? ` (${rec.error})` : ''}. Try again.`, 'error');
+  }
+
+  rec.phase = 'saving';
+  renderTasks();
+
+  try {
+    await saveNote(rec.task, blob, rec.elapsed);
+    done(rec.capped ? 'Two minutes is the limit, so it stopped there. Voice note saved.' : 'Voice note saved.', 'success');
+  } catch (error) {
+    done(error.message, 'error');
+  }
+}
+
+async function saveNote(task, blob, durationMs) {
+  const mime = blob.type;
+  const path = `${state.profile.id}/${task.id}/${crypto.randomUUID()}.${extensionFor(mime)}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(AUDIO_BUCKET)
+    .upload(path, blob, { contentType: mime, cacheControl: '3600', upsert: false });
+  if (uploadError) throw new Error(storageMessage(uploadError, 'Couldn’t upload that voice note.'));
+
+  const { data, error } = await supabase
+    .from('task_audio')
+    .insert({
+      task_id: task.id,
+      path,
+      mime_type: mime,
+      duration_ms: Math.round(durationMs),
+      size_bytes: blob.size,
+    })
+    .select('id, task_id, path, mime_type, duration_ms, created_at')
+    .single();
+
+  if (error) {
+    // A file with no row is invisible and undeletable from the app — take it back.
+    await supabase.storage.from(AUDIO_BUCKET).remove([path]).catch(() => {});
+    throw new Error(describeError(error, 'Couldn’t save that voice note.'));
+  }
+
+  state.notes.push(data);
+  signUrls([path]).catch(() => { /* Signed again on first play. */ });
+}
+
+/* --------------------------------------------------------------- playback -- */
+
+/* One player for the whole page: starting a note stops whichever was playing. */
+const player = { audio: null, noteId: null };
+
+function audioElement() {
+  if (player.audio) return player.audio;
+  const audio = new Audio();
+  audio.preload = 'none';
+  for (const event of ['play', 'pause', 'timeupdate', 'loadedmetadata']) {
+    audio.addEventListener(event, paintPlaying);
+  }
+  audio.addEventListener('ended', () => {
+    audio.currentTime = 0;
+    paintPlaying();
+  });
+  audio.addEventListener('error', onPlaybackError);
+  player.audio = audio;
+  return audio;
+}
+
+function paintChip(chip, note) {
+  const audio = player.audio;
+  const active = player.noteId === note.id && audio;
+  const playing = Boolean(active && !audio.paused && !audio.ended);
+  const position = active ? audio.currentTime * 1000 : 0;
+  const total = Number(note.duration_ms) || (active && Number.isFinite(audio.duration) ? audio.duration * 1000 : 0);
+
+  chip.dataset.state = playing ? 'playing' : (active && position > 0 ? 'paused' : 'idle');
+  chip.style.setProperty('--progress', total ? String(Math.min(position / total, 1)) : '0');
+
+  const time = chip.querySelector('.voice-note__time');
+  // Counting up while it plays, the full length at rest.
+  if (time) time.textContent = formatDuration(chip.dataset.state === 'idle' ? note.duration_ms : position);
+
+  chip.querySelector('.voice-note__play')?.setAttribute(
+    'aria-label',
+    playing ? 'Pause voice note' : `Play voice note, ${spokenDuration(note.duration_ms)}`,
+  );
+}
+
+function paintPlaying() {
+  for (const chip of document.querySelectorAll('.voice-note')) {
+    const note = state.notes.find((n) => n.id === chip.dataset.noteId);
+    if (note) paintChip(chip, note);
+  }
+}
+
+function stopPlayback() {
+  if (!player.audio) return;
+  player.audio.pause();
+  player.noteId = null;
+  paintPlaying();
+}
+
+function startAudio(audio) {
+  audio.play().catch((error) => {
+    if (error?.name === 'AbortError') return; // Superseded by another tap.
+    if (error?.name === 'NotAllowedError') {
+      toast('Tap play again to listen.', { type: 'info', duration: 3000 });
+      return;
+    }
+    if (error?.name !== 'NotSupportedError') toast(`Couldn’t play that voice note: ${error.message}`, { type: 'error' });
+  });
+}
+
+async function togglePlayback(note) {
+  if (state.recording) {
+    toast('Finish the recording before playing a note.', { type: 'info' });
+    return;
+  }
+
+  const audio = audioElement();
+
+  if (player.noteId === note.id && audio.src) {
+    if (audio.paused) startAudio(audio);
+    else audio.pause();
+    return;
+  }
+
+  let url = freshUrl(note.path);
+  if (!url) {
+    try {
+      await signUrls([note.path]);
+    } catch (error) {
+      toast(error.message, { type: 'error' });
+      return;
+    }
+    url = freshUrl(note.path);
+    if (!url) {
+      toast('That voice note’s file is missing from storage. Delete the note and record it again.', { type: 'error' });
+      return;
+    }
+  }
+
+  audio.pause();
+  player.noteId = note.id;
+  audio.src = url;
+  paintPlaying();
+  startAudio(audio);
+}
+
+function onPlaybackError() {
+  const note = state.notes.find((n) => n.id === player.noteId);
+  if (!note) return;
+
+  // Most likely an expired or revoked URL; the next tap signs a fresh one.
+  state.urls.delete(note.path);
+  player.audio.removeAttribute('src');
+  player.noteId = null;
+  paintPlaying();
+
+  const playable = player.audio.canPlayType(note.mime_type);
+  toast(
+    playable
+      ? 'Couldn’t play that voice note. Tap play to try again.'
+      : `This browser can’t play ${extensionFor(note.mime_type)} audio. Open the note on the device that recorded it.`,
+    { type: 'error' },
+  );
+}
+
+async function removeNote(note) {
+  if (!window.confirm('Delete this voice note? This can’t be undone.')) return;
+  if (player.noteId === note.id) stopPlayback();
+
+  try {
+    // File first: if the row delete then fails, deleting again still works,
+    // because removing a file that's already gone is not an error.
+    const { error: storageError } = await supabase.storage.from(AUDIO_BUCKET).remove([note.path]);
+    if (storageError) throw new Error(storageMessage(storageError, 'Couldn’t delete that voice note.'));
+
+    const { error } = await supabase.from('task_audio').delete().eq('id', note.id);
+    if (error) throw new Error(describeError(error, 'Couldn’t delete that voice note.'));
+
+    state.notes = state.notes.filter((n) => n.id !== note.id);
+    state.urls.delete(note.path);
+    renderTasks();
+    toast('Voice note deleted.', { type: 'success', duration: 2000 });
+  } catch (error) {
+    toast(error.message, { type: 'error' });
+  }
+}
+
+/**
+ * Paths read fresh from the database rather than from state: a note recorded
+ * on the other phone since this page loaded must not survive its task.
+ */
+async function audioPathsFor(taskId) {
+  const { data, error } = await supabase.from('task_audio').select('path').eq('task_id', taskId);
+  if (error) {
+    if (MISSING_TABLE.has(error.code)) return [];
+    throw new Error(describeError(error, 'Couldn’t check this task for voice notes, so it was kept. Try again.'));
+  }
+  return (data ?? []).map((row) => row.path);
+}
+
 /* ---------------------------------------------------------------- writes -- */
 
 async function addTask(event) {
@@ -491,10 +1108,33 @@ async function toggleTask(task, done, checkbox, card) {
 }
 
 async function removeTask(task) {
+  if (state.recording?.taskId === task.id) {
+    toast('Stop the recording on this task before deleting it.', { type: 'info' });
+    return;
+  }
+
+  const known = notesFor(task.id).length;
+  if (known && !window.confirm(
+    `Delete ${task.title} and its ${known === 1 ? 'voice note' : `${known} voice notes`}? This can't be undone.`,
+  )) return;
+
   try {
+    // The cascade removes the note rows but can't touch storage, so the files
+    // go first — and if they can't, the task stays rather than orphan them.
+    const paths = await audioPathsFor(task.id);
+    if (paths.length) {
+      if (notesFor(task.id).some((n) => n.id === player.noteId)) stopPlayback();
+      const { error: storageError } = await supabase.storage.from(AUDIO_BUCKET).remove(paths);
+      if (storageError) {
+        throw new Error(storageMessage(storageError, 'Couldn’t delete this task’s voice notes, so the task was kept. Try again.'));
+      }
+    }
+
     const { error } = await supabase.from('tasks').delete().eq('id', task.id);
     if (error) throw new Error(describeError(error, 'Couldn’t delete that task.'));
 
+    for (const path of paths) state.urls.delete(path);
+    state.notes = state.notes.filter((n) => n.task_id !== task.id);
     state.tasks = state.tasks.filter((t) => t.id !== task.id);
     toast('Task deleted.', { type: 'success', duration: 2000 });
     renderTasks();
@@ -712,6 +1352,28 @@ export async function initTasksPage() {
   renderTasks();
   renderObjectives();
   wireControls();
+  loadNotes();
+}
+
+/**
+ * After the list, not before it: voice notes are an extra, and a failure here
+ * (most likely the migration not yet run) must not take the tasks down with it.
+ */
+async function loadNotes() {
+  try {
+    state.notes = await fetchNotes();
+    state.notesReady = true;
+    renderTasks();
+  } catch (error) {
+    toast(error.message, { type: 'error' });
+    return;
+  }
+
+  try {
+    await signUrls(state.notes.map((n) => n.path));
+  } catch (error) {
+    toast(error.message, { type: 'error' });
+  }
 }
 
 function wireControls() {
@@ -731,4 +1393,9 @@ function wireControls() {
   document.getElementById('objective-cancel').addEventListener('click', () => refs.objectiveModal.close());
   document.getElementById('objective-close').addEventListener('click', () => refs.objectiveModal.close());
   refs.objectiveForm.addEventListener('submit', createObjective);
+
+  // Leaving mid-recording must not leave the microphone open behind you.
+  window.addEventListener('pagehide', () => {
+    state.recording?.stream?.getTracks().forEach((t) => t.stop());
+  });
 }

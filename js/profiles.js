@@ -11,8 +11,8 @@
  * is dropped and the picker takes over. Supabase stays the source of truth.
  */
 
-import { supabase, describeError } from './supabase.js?v=42';
-import { goTo, PICKER_PAGE } from './auth.js?v=42';
+import { supabase, describeError } from './supabase.js?v=43';
+import { goTo, PICKER_PAGE } from './auth.js?v=43';
 
 const ACTIVE_KEY = 'streak.active_profile';
 
@@ -125,11 +125,47 @@ export async function updatePresence(id, { showOnlineStatus, chatEnabled }) {
   return data;
 }
 
-/** Cascades to that profile's habits, finances and trades. */
+/**
+ * Cascades to that profile's habits, finances and trades.
+ *
+ * Voice notes are the exception: the cascade removes their rows but not the
+ * files, and Supabase won't delete storage objects from SQL. So the files go
+ * first, and if they can't, the profile stays — orphaned audio nobody can
+ * see or remove is worse than a delete you retry.
+ */
 export async function deleteProfile(id) {
+  await removeProfileAudio(id);
+
   const { error } = await supabase.from('profiles').delete().eq('id', id);
   if (error) throw new Error(describeError(error, 'Couldn’t remove that profile.'));
   if (getActiveProfileId() === id) clearActiveProfile();
+}
+
+/* Codes PostgREST uses for "no such table" — the voice-notes migration hasn't
+   been run, so there is no audio to clean up and nothing to block on. */
+const MISSING_TABLE = new Set(['42P01', 'PGRST205']);
+
+async function removeProfileAudio(profileId) {
+  const { data, error } = await supabase
+    .from('task_audio')
+    .select('path, tasks!inner(profile_id)')
+    .eq('tasks.profile_id', profileId);
+
+  if (error) {
+    if (MISSING_TABLE.has(error.code)) return;
+    throw new Error(describeError(error, 'Couldn’t find this profile’s voice notes to remove them.'));
+  }
+
+  const paths = (data ?? []).map((row) => row.path);
+  // The storage API takes a bounded list per call.
+  for (let i = 0; i < paths.length; i += 100) {
+    const { error: removeError } = await supabase.storage
+      .from('task-audio')
+      .remove(paths.slice(i, i + 100));
+    if (removeError) {
+      throw new Error(describeError(removeError, 'Couldn’t remove this profile’s voice notes. Try again.'));
+    }
+  }
 }
 
 /* --------------------------------------------------------------- active -- */

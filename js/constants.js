@@ -51,6 +51,25 @@ export const OBJECTIVE_STATUSES = [
   { value: 'abandoned', label: 'Abandoned' },
 ];
 
+/**
+ * Planner event colours. The database stores the key, never a hex: each key
+ * resolves to one of the validated chart slots, which are already tuned for
+ * both themes, so an event keeps its identity when the theme flips.
+ */
+export const EVENT_COLOURS = [
+  { value: 'ember', label: 'Ember', token: '--series-1' },
+  { value: 'teal', label: 'Teal', token: '--series-2' },
+  { value: 'green', label: 'Green', token: '--series-3' },
+  { value: 'lilac', label: 'Lilac', token: '--series-4' },
+  { value: 'violet', label: 'Violet', token: '--series-5' },
+  { value: 'brick', label: 'Brick', token: '--series-6' },
+];
+
+/** An unknown key (an old row, a hand edit) falls back to the first colour. */
+export function eventColour(value) {
+  return EVENT_COLOURS.find((c) => c.value === value) ?? EVENT_COLOURS[0];
+}
+
 /** Units an objective can be counted in. Free text is allowed too. */
 export const OBJECTIVE_UNITS = [
   'trades', 'days', 'sessions', 'pages', 'hours', 'MAD', 'USD', '%',
@@ -104,7 +123,7 @@ export function seedFor(kind) {
  * don't. One query for all four kinds.
  */
 export async function loadOptions(profileId) {
-  const { supabase, describeError } = await import('./supabase.js?v=42');
+  const { supabase, describeError } = await import('./supabase.js?v=43');
 
   const { data, error } = await supabase
     .from('profile_options')

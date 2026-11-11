@@ -3,8 +3,8 @@
  * Section modules never import each other — anything they share lives here.
  */
 
-import { startPresenceHeartbeat, initPresenceStrip } from './presence.js?v=42';
-import { initChat } from './chat.js?v=42';
+import { startPresenceHeartbeat, initPresenceStrip } from './presence.js?v=43';
+import { initChat } from './chat.js?v=43';
 
 const THEME_KEY = 'streak.theme';
 
@@ -375,6 +375,7 @@ export function initials(name = '') {
 const NAV = [
   ['habits.html', 'Habits'],
   ['tasks.html', 'Tasks'],
+  ['planner.html', 'Planner'],
   ['plans.html', 'Plans'],
   ['wellbeing.html', 'Wellbeing'],
   ['finances.html', 'Finances'],
@@ -600,7 +601,7 @@ function currencySwitch(profile, onChange) {
  * accessible name, and the chosen one is marked with aria-pressed rather than
  * only a ring.
  */
-export function swatchPicker({ colors, value, onPick, label = 'Colour' }) {
+export function swatchPicker({ colors, value, onPick, label = 'Colour', names = [] }) {
   const group = el('div', { class: 'swatches', role: 'group', 'aria-label': label });
   let chosen = value ?? colors[0];
 
@@ -616,7 +617,7 @@ export function swatchPicker({ colors, value, onPick, label = 'Colour' }) {
       type: 'button',
       style: `background-color: ${color}`,
       dataset: { color },
-      'aria-label': `Colour ${index + 1}`,
+      'aria-label': names[index] ?? `Colour ${index + 1}`,
       onclick: () => {
         chosen = color;
         paint();

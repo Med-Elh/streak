@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en" data-booting>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <meta http-equiv="Cache-Control" content="no-cache" />
+  <title>Planner · Streak.</title>
+  <!-- Installable app (Add to Home Screen). Hex values here mirror --bg in
+       tokens.css; the browser reads them before any CSS loads. -->
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+  <meta name="theme-color" content="#eef0f4" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0e1017" media="(prefers-color-scheme: dark)" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Streak." />
+  <script>
+    if ('serviceWorker' in navigator) {
+      addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+    }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
+    rel="stylesheet" />
+
+  <link rel="stylesheet" href="css/tokens.css?v=43" />
+  <link rel="stylesheet" href="css/base.css?v=43" />
+  <link rel="stylesheet" href="css/components.css?v=43" />
+</head>
+
+<body>
+  <main class="page stack-lg">
+    <div class="page-head">
+      <div>
+        <p class="eyebrow">Planner</p>
+        <h1>What <span id="profile-name"></span> has planned</h1>
+      </div>
+    </div>
+
+    <!-- The week -->
+    <section class="card planner-week" aria-labelledby="week-label">
+      <div class="planner-week__head">
+        <button class="btn btn--icon" type="button" id="prev-week" aria-label="Previous week">‹</button>
+        <div class="planner-week__heading">
+          <span class="planner-week__relative" id="week-relative"></span>
+          <h2 class="planner-week__label" id="week-label" aria-live="polite"></h2>
+        </div>
+        <button class="btn btn--icon" type="button" id="next-week" aria-label="Next week">›</button>
+        <button class="btn btn--secondary btn--sm planner-week__today" type="button" id="this-week">Today</button>
+      </div>
+      <div class="planner-week__days" id="week-days" role="group" aria-label="Days of the week"></div>
+    </section>
+
+    <!-- The day -->
+    <section class="card planner-day" aria-labelledby="day-title">
+      <div class="planner-day__head">
+        <div>
+          <h2 class="planner-day__title" id="day-title"></h2>
+          <p class="planner-day__summary" id="day-summary"></p>
+        </div>
+        <button class="btn btn--primary btn--sm" type="button" id="day-add">Add event</button>
+      </div>
+
+      <div id="day-tasks"></div>
+      <div id="day-note"></div>
+      <div class="planner-hours" id="day-hours"></div>
+    </section>
+  </main>
+
+  <dialog class="modal" id="event-modal" aria-labelledby="event-modal-title">
+    <form id="event-form" novalidate>
+      <div class="modal__head">
+        <h2 class="modal__title" id="event-modal-title">Add an event</h2>
+        <button class="btn btn--icon" type="button" id="event-close" aria-label="Close">×</button>
+      </div>
+
+      <div class="modal__body stack">
+        <p class="banner banner--error" id="event-error" role="alert" hidden></p>
+
+        <div class="field">
+          <label class="label" for="event-title">Title</label>
+          <input class="input" id="event-title" maxlength="120" autocomplete="off"
+            enterkeyhint="done" placeholder="Gym" />
+        </div>
+
+        <div class="field">
+          <label class="label" for="event-date">Date</label>
+          <input class="input" type="date" id="event-date" />
+        </div>
+
+        <div class="planner-times">
+          <div class="field">
+            <label class="label" for="event-start">Starts</label>
+            <input class="input" type="time" id="event-start" step="300" />
+          </div>
+          <div class="field">
+            <label class="label" for="event-end">Ends</label>
+            <input class="input" type="time" id="event-end" step="300" aria-describedby="event-end-hint" />
+          </div>
+        </div>
+        <p class="hint" id="event-end-hint" hidden>Runs until midnight.</p>
+
+        <div class="field">
+          <span class="label" id="event-colour-label">Colour</span>
+          <div id="event-colour"></div>
+        </div>
+      </div>
+
+      <div class="modal__foot">
+        <button class="btn btn--danger planner-modal__delete" type="button" id="event-delete" hidden>Delete event</button>
+        <button class="btn btn--secondary" type="button" id="event-cancel">Cancel</button>
+        <button class="btn btn--primary" type="submit" id="event-submit">Add event</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module">
+    import { initPlannerPage } from './js/planner.js?v=43';
+    initPlannerPage();
+  </script>
+</body>
+</html>

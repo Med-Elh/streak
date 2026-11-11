@@ -14,9 +14,10 @@ One shared app, several **profiles**. A profile is a person (starts with two, mo
 
 **Sections:**
 1. **Habits** — daily check-ins, streaks, comparison and competition between profiles
-2. **Tasks & Objectives** — a to-do list and longer-run goals with progress
-3. **Finances** — income and expenses by category, monthly view
-4. **Trading** — trade journal with structured fields and performance charts
+2. **Tasks & Objectives** — a to-do list (with voice notes) and longer-run goals with progress
+3. **Planner** — a week at a glance, and each day split into hours with timed events
+4. **Finances** — income and expenses by category, monthly view
+5. **Trading** — trade journal with structured fields and performance charts
 
 ---
 
@@ -45,6 +46,7 @@ One shared app, several **profiles**. A profile is a person (starts with two, mo
 ├── profiles.html           # Profile picker (post-login)
 ├── habits.html
 ├── tasks.html
+├── planner.html
 ├── plans.html
 ├── wellbeing.html
 ├── finances.html
@@ -65,7 +67,8 @@ One shared app, several **profiles**. A profile is a person (starts with two, mo
 │   ├── presence.js         # Online status: heartbeat + top-bar strip
 │   ├── chat.js             # Chat icon, panel, polling, mark-as-read
 │   ├── habits.js
-│   ├── tasks.js
+│   ├── tasks.js            # Tasks, objectives, and voice notes on tasks
+│   ├── planner.js          # Week strip + hour-by-hour day, planner_events
 │   ├── plans.js
 │   ├── wellbeing.js
 │   ├── accounts.js
@@ -131,6 +134,27 @@ tasks (
   done boolean, completed_at timestamptz, created_at
 )
 
+-- task_audio: voice notes on a task. The file lives in the private
+-- `task-audio` storage bucket at {profile_id}/{task_id}/{uuid}.{m4a|webm},
+-- read through signed URLs. Rows cascade with their task; the files do not
+-- (Supabase won't delete storage objects from SQL), so the app removes the
+-- files first whenever a note, a task or a profile is deleted.
+task_audio (
+  id uuid pk, task_id uuid references tasks(id) on delete cascade,
+  path text unique, mime_type text,           -- bare type: 'audio/mp4' | 'audio/webm'
+  duration_ms int check (duration_ms between 0 and 125000),  -- measured while recording
+  size_bytes int, created_at
+)
+
+-- planner_events: timed blocks on a day. end_time may be 24:00 (until midnight).
+-- color is a key from EVENT_COLOURS in constants.js, never a hex.
+planner_events (
+  id uuid pk, profile_id uuid references profiles(id) on delete cascade,
+  title text check (length(btrim(title)) between 1 and 120),
+  date date, start_time time, end_time time check (end_time > start_time),
+  color text default 'ember', created_at
+)
+
 objectives (
   id, profile_id, title text, notes text,
   target_value numeric, current_value numeric, unit text,
@@ -179,6 +203,8 @@ trading_rules (
 
 One policy per table, `for all`, `to authenticated`, `using (true) with check (true)`. RLS is doing one job here: keeping the anon key from reading the database. It is not a per-profile boundary, because there isn't one.
 
+Storage follows the same rule: the `task-audio` bucket is private (5 MB per file, audio types only) with one `for all to authenticated` policy on `storage.objects` scoped by `bucket_id = 'task-audio'`.
+
 ---
 
 ## 5. Screens
@@ -201,7 +227,17 @@ Two halves on one page, both scoped to the active profile.
 
 **Tasks** — a quick-add input at the top: type a title, press enter, it's on the list. A checkbox completes it, done items strike through and collapse into a "Done today" group at the bottom. Each row shows its due date and a coloured priority dot; overdue dates are red. Filter by all / today / overdue / done.
 
+**Voice notes** — every task card has a mic button. Tapping it records (MediaRecorder; AAC-in-mp4 preferred because every browser, iPhone Safari included, can play it back, webm as the fallback) with a live timer and bar against the **2-minute cap**, where it stops and saves on its own. "Stop and save" uploads to the `task-audio` bucket and writes a `task_audio` row; "Discard" keeps nothing. Each note shows as a pill with a play/pause button and its duration, filling as it plays; one note plays at a time. A task can carry several. Deleting a note, a task, or a whole profile removes the files from storage before the rows, and if the files can't be removed the delete stops. Signed URLs are fetched in one batch on load, because iPhone Safari only starts audio inside the tap that asked for it.
+
 **Objectives** — cards, each with a title, a progress ring of current against target, the raw numbers under it ("12 / 30 trades"), and the deadline with days remaining. Editing an objective updates its current value. Achieved objectives move to a collapsed section.
+
+### Planner (`planner.html`)
+Scoped to the active profile. Built phone-first.
+- **Week strip** at the top: Monday to Sunday, ‹ › to move a week (or swipe sideways on the strip, or ←/→ to walk the days), a "Today" button whenever you're elsewhere. Today is in the accent colour; the open day is filled. Narrow screens show a coloured dot per event and a ring for tasks due; wide screens name the first three events.
+- **Day view** below: the open day split into 24 hour rows in its own scroller, opened at the current hour (today), the first event, or 7am. Tapping an empty hour adds an event there (the lower half of an hour starts on the half hour); tapping an event opens it to edit or delete. Overlapping events sit side by side in columns. A line marks the current time on today.
+- **Event modal**: title, date, start, end, colour (six keys mapped to the chart series tokens, so both themes work). Moving the start keeps the length; an end of 00:00 means until midnight and is stored as 24:00. Moving an event to another day follows it there.
+- **Tasks due that day** are listed above the hours, read-only apart from the tick, which completes the task exactly as on the Tasks page.
+- The open day is kept in the URL (`?date=YYYY-MM-DD`), not localStorage.
 
 ### Finances
 - Month selector at the top; everything below is scoped to that month.
@@ -252,6 +288,7 @@ Seed values — all user-editable from Settings:
 - **Setups:** Breakout, Reversal, Trend continuation, Range, Liquidity sweep, Order block, Fair value gap, News
 - **Outcomes:** Win, Loss, Breakeven
 - **Instruments:** XAUUSD, EURUSD, GBPUSD, USDJPY, NAS100, US30, SPX500, BTCUSD, ETHUSD
+- **Event colours** (planner, fixed): Ember, Teal, Green, Lilac, Violet, Brick — stored as lowercase keys, drawn with `--series-1`…`--series-6`
 
 ---
 
