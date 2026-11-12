@@ -9,7 +9,7 @@
  */
 
 import Chart from 'https://esm.sh/chart.js@4/auto';
-import { formatMoney, compactMoney } from './ui.js?v=46';
+import { formatMoney, compactMoney } from './ui.js?v=47';
 
 /* Registry of live charts, so a theme flip can rebuild them with new colours. */
 const live = new Map();
@@ -1029,6 +1029,108 @@ export function countBarChart(canvas, { labels, values, colors, unit = 'time' })
   return mount(canvas, builder(), builder);
 }
 
+/* ------------------------------------------------------------------------- */
+/* Wellbeing — mood over time                                                 */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * One point per day: the day's average intensity (1–5), coloured by the way
+ * the day leaned. `points` is aligned to `labels`, each
+ * { value: number | null, tone: 'good' | 'difficult' | 'even', lines: string[] }.
+ * A day with nothing logged is null, so the line breaks there rather than
+ * diving to zero: an empty day isn't a bad one.
+ *
+ * Colours are read here, inside the builder, so the theme observer below
+ * redraws them from the new tokens on a dark/light switch.
+ */
+export function moodLineChart(canvas, { labels, titles, points }) {
+  const builder = () => {
+    const c = chrome();
+    const tones = {
+      good: token('--tone-good'),
+      difficult: token('--tone-difficult'),
+      even: token('--tone-even'),
+    };
+    const toneAt = (i) => tones[points[i]?.tone] ?? tones.even;
+    const dense = labels.length > 31;
+    return {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Average intensity',
+          data: points.map((p) => p.value),
+          spanGaps: false,
+          // Each stretch of line takes the colour of the day it leads into.
+          segment: { borderColor: (ctx) => toneAt(ctx.p1DataIndex) },
+          borderColor: tones.even,
+          borderWidth: 2,
+          cubicInterpolationMode: 'monotone',
+          pointRadius: dense ? 2.5 : 4,
+          pointHoverRadius: 6,
+          pointBackgroundColor: points.map((_, i) => toneAt(i)),
+          pointHoverBackgroundColor: points.map((_, i) => toneAt(i)),
+          pointBorderColor: c.surface,
+          pointBorderWidth: 2,
+          // A soft wash under the line, fading to nothing at the floor.
+          fill: 'start',
+          backgroundColor: (ctx) => {
+            const area = ctx.chart.chartArea;
+            if (!area) return 'transparent';
+            const wash = ctx.chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+            wash.addColorStop(0, alpha(c.muted, 0.16));
+            wash.addColorStop(1, alpha(c.muted, 0));
+            return wash;
+          },
+          clip: 8,
+        }],
+      },
+      options: {
+        ...baseOptions(c),
+        interaction: { mode: 'nearest', axis: 'x', intersect: false },
+        layout: { padding: { top: 6, right: 6 } },
+        scales: {
+          x: {
+            grid: { display: false },
+            border: { color: c.axis },
+            ticks: {
+              color: c.faint,
+              font: { family: c.font, size: 11 },
+              maxRotation: 0,
+              autoSkip: true,
+              autoSkipPadding: 14,
+              maxTicksLimit: 7,
+            },
+          },
+          y: {
+            min: 0.6,
+            max: 5.4,
+            // Three faint guides (barely, moderately, completely) and no
+            // numbers: the height is a feel, not a score.
+            afterBuildTicks: (axis) => { axis.ticks = [1, 3, 5].map((value) => ({ value })); },
+            grid: { color: c.grid, drawTicks: false },
+            border: { display: false },
+            ticks: { display: false },
+          },
+        },
+        plugins: {
+          ...baseOptions(c).plugins,
+          tooltip: {
+            ...baseOptions(c).plugins.tooltip,
+            displayColors: false,
+            filter: (item) => item.parsed.y !== null,
+            callbacks: {
+              title: (items) => titles[items[0]?.dataIndex] ?? '',
+              label: (ctx) => points[ctx.dataIndex]?.lines ?? [],
+            },
+          },
+        },
+      },
+    };
+  };
+  return mount(canvas, builder(), builder);
+}
+
 /* Axis ticks and tooltips go through the money helpers in ui.js, so a change of
    display currency reaches the charts without any of them knowing about it. */
 
@@ -1043,10 +1145,17 @@ export function destroyChart(canvas) {
  * Dark mode is its own set of steps, not a filter over the light ones, so a
  * theme change means rebuilding every chart rather than tinting it.
  */
-new MutationObserver(() => {
+function rebuildAll() {
   for (const [canvas, entry] of live) {
     entry.instance.destroy();
     const instance = new Chart(canvas, entry.builder());
     live.set(canvas, { instance, builder: entry.builder });
   }
-}).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+}
+new MutationObserver(rebuildAll)
+  .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+// With no theme chosen the page follows the system, which changes without
+// touching data-theme (sunset, or the phone's own switch).
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => {
+  if (!document.documentElement.dataset.theme) rebuildAll();
+});

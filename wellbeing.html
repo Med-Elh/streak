@@ -18,7 +18,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Streak." />
   <!-- Opening splash on phones: classic script, so it runs before the first paint. -->
-  <script src="./js/splash.js?v=46"></script>
+  <script src="./js/splash.js?v=47"></script>
   <script>
     if ('serviceWorker' in navigator) {
       addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
@@ -31,9 +31,9 @@
     href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
     rel="stylesheet" />
 
-  <link rel="stylesheet" href="css/tokens.css?v=46" />
-  <link rel="stylesheet" href="css/base.css?v=46" />
-  <link rel="stylesheet" href="css/components.css?v=46" />
+  <link rel="stylesheet" href="css/tokens.css?v=47" />
+  <link rel="stylesheet" href="css/base.css?v=47" />
+  <link rel="stylesheet" href="css/components.css?v=47" />
 </head>
 
 <body class="calm">
@@ -84,24 +84,51 @@
       <div id="week-view"></div>
     </section>
 
-    <section class="card card--calm" aria-labelledby="chart-title">
-      <div class="card__head">
-        <h2 class="card__title" id="chart-title">What comes up most</h2>
-        <select class="select" id="chart-range" aria-label="Period">
+    <!-- One period for all three views. Each view sits in its own block so a
+         loading skeleton or an empty state can stand in for it. -->
+    <section class="card card--calm" aria-labelledby="trends-title">
+      <div class="trends__head">
+        <div>
+          <h2 class="card__title" id="trends-title">Looking back</h2>
+          <p class="faint trends__summary" id="trends-summary" aria-live="polite"></p>
+        </div>
+        <select class="select trends__range" id="chart-range" aria-label="Period">
           <option value="7">Last 7 days</option>
           <option value="30" selected>Last 30 days</option>
           <option value="90">Last 90 days</option>
         </select>
       </div>
-      <div class="chart chart--tall">
-        <canvas id="feeling-chart" aria-label="Feelings by frequency"></canvas>
-        <p class="chart-empty" id="feeling-chart-empty" hidden></p>
+
+      <div id="trends-empty" hidden></div>
+
+      <div class="trends" id="trends">
+        <section class="trend" aria-labelledby="balance-title">
+          <h3 class="trend__title" id="balance-title">Balance</h3>
+          <div id="balance"></div>
+        </section>
+
+        <section class="trend" aria-labelledby="mood-title">
+          <h3 class="trend__title" id="mood-title">Mood over time</h3>
+          <div class="chart chart--mood" id="mood-box">
+            <canvas id="mood-chart" role="img"></canvas>
+          </div>
+          <p class="trend__key" id="mood-key" aria-hidden="true">
+            <span class="tone-dot tone-dot--good"></span>Leaned good
+            <span class="tone-dot tone-dot--difficult"></span>Leaned difficult
+            <span class="trend__key-note">Higher means felt more strongly</span>
+          </p>
+        </section>
+
+        <section class="trend" aria-labelledby="most-title">
+          <h3 class="trend__title" id="most-title">What comes up most</h3>
+          <div id="feeling-bars"></div>
+        </section>
       </div>
     </section>
   </main>
 
   <script type="module">
-    import { initWellbeingPage } from './js/wellbeing.js?v=46';
+    import { initWellbeingPage } from './js/wellbeing.js?v=47';
     initWellbeingPage();
   </script>
 </body>

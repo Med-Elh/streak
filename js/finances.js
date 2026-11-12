@@ -7,21 +7,21 @@
  * too many.
  */
 
-import { supabase, describeError } from './supabase.js?v=46';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=46';
-import { requireActiveProfile } from './profiles.js?v=46';
+import { supabase, describeError } from './supabase.js?v=47';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=47';
+import { requireActiveProfile } from './profiles.js?v=47';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
   formatMoney, formatDate, todayISO, moneyContext, initMoney, swatchPicker,
   applyProfileTheme,
-} from './ui.js?v=46';
-import { categoryDoughnut, monthlyNetChart, seriesColor, categoryColor } from './charts.js?v=46';
+} from './ui.js?v=47';
+import { categoryDoughnut, monthlyNetChart, seriesColor, categoryColor } from './charts.js?v=47';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** Beyond six categories the palette is out of distinct hues, so the tail folds. */
 const MAX_SLICES = 6;
 
-import { mountGreeting } from './greetings.js?v=46';
+import { mountGreeting } from './greetings.js?v=47';
 
 const state = {
   profile: null,

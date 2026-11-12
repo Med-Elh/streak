@@ -277,6 +277,18 @@ Views:
 - **Charts** — cumulative equity curve; P&L by day, by month, by year; win rate by setup; win rate by session; P&L distribution by emotion.
 - **Rules** — a checklist of the profile's own trading rules, editable, shown alongside the log form as a pre-trade check.
 
+### Wellbeing (`wellbeing.html`)
+Not scored and not compared. Logging takes two taps: pick a feeling (the list is `FEELINGS` in `constants.js`, each with an icon, a colour token and a `tone` of `good` or `difficult`), then save. Intensity (1–5) and a note are optional. Entries live in `mood_entries`, and a reflection may follow the save.
+- **Today**: a timeline of today's entries with time, feeling, intensity dots and note. Lines wrap on a phone rather than overflowing.
+- **This week**: seven days across, four parts of the day down; each block is the strongest feeling logged then. It must fit at 375px with every day label whole.
+- **Looking back**: one 7/30/90-day selector drives three views of the same period, with a summary line ("47 entries on 23 days of the last 30"):
+  - **Balance**: one split bar of good against difficult feelings, by count, with the percentages and counts under it.
+  - **Mood over time**: Chart.js, one point per day at that day's average intensity, coloured by the way the day leaned (whichever tone carried more intensity; a tie is "even"), with a soft fill. Days with nothing logged are gaps, never zeros. The tones are `--tone-good` (teal) and `--tone-difficult` (violet); green and red stay reserved for money.
+  - **What comes up most**: plain HTML/CSS bars, not a chart. One row per feeling: emoji and name, a rounded bar in the feeling's colour drawn against the most-felt one, then the count and %. Rows are about 36px, so the block grows with the list.
+  - One empty state covers all three, since they're empty together: "Nothing logged in the last 30 days. Log how you feel above." It has a button that focuses the feelings. While loading, each view shows a skeleton of its own shape.
+- **Colours** are token references (`var(--series-2)`), never values read once, so a theme switch recolours everything. The one Chart.js chart resolves its colours inside its builder, so the theme observer in `charts.js` redraws it. That observer now also catches the system's own dark/light change.
+- **The chart** is created only once its box is visible and has a real size, and destroyed when the period is empty. Chart.js measures its box at creation, and a hidden one gives it 0×0.
+
 ### Settings
 - **Profiles** — add, rename, recolor, remove.
 - **Options** — edit the dropdown lists (instruments, setups, sessions, emotions) and finance categories.

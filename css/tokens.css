@@ -178,6 +178,17 @@
   --series-5: #604183;  /* violet */
   --series-6: #883d22;  /* brick  */
   --series-other: #6b7280;
+
+  /* Wellbeing's two tones: how a day or a share of feelings leaned. Calm
+     hues on purpose: green and red mean money in this app, and a hard day
+     isn't a loss. Defined from the series, so each theme's own steps apply
+     (the dark block only redefines the series). */
+  /* Teal is Calm's own colour and violet is Anxious's, so each tone matches
+     feelings on its own side. Lilac (Grateful) would have painted a good
+     feeling in the difficult colour. */
+  --tone-good: var(--series-2);
+  --tone-difficult: var(--series-5);
+  --tone-even: var(--neutral);
 }
 
 /* ======================================================================

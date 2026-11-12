@@ -3,8 +3,8 @@
  * Section modules never import each other — anything they share lives here.
  */
 
-import { startPresenceHeartbeat, initPresenceStrip } from './presence.js?v=46';
-import { initChat } from './chat.js?v=46';
+import { startPresenceHeartbeat, initPresenceStrip } from './presence.js?v=47';
+import { initChat } from './chat.js?v=47';
 
 const THEME_KEY = 'streak.theme';
 

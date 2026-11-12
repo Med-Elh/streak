@@ -2378,7 +2378,15 @@
   background: var(--feeling);
 }
 .timeline__body { flex: 1 1 auto; min-width: 0; }
-.timeline__feeling { display: flex; align-items: center; gap: var(--space-2); font-weight: var(--weight-medium); }
+/* Wraps, so a long feeling plus its intensity dots drops the dots to a
+   second line on a phone rather than running out of the row. */
+.timeline__feeling {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--space-2);
+  font-weight: var(--weight-medium);
+}
 .timeline__intensity { font-size: var(--text-xs); letter-spacing: 0.14em; color: var(--feeling); }
 .timeline__note { margin-top: var(--space-1); font-size: var(--text-sm); color: var(--text-muted); }
 
@@ -2412,10 +2420,162 @@
   border-color: var(--feeling);
 }
 
+/* At 375px each day column is under 30px: the labels lose their tracking
+   and a size step so "WED" fits whole instead of being clipped. */
 @media (max-width: 520px) {
-  .week-grid__band { font-size: 0.5625rem; }
+  .week-grid { gap: 4px; }
+  .week-grid__day { font-size: 0.625rem; letter-spacing: 0.02em; }
+  .week-grid__band { font-size: 0.5625rem; letter-spacing: 0.02em; padding-right: var(--space-1); }
   .week-grid__cell { height: 26px; }
 }
+
+/* The calm cards' generous padding is a desktop luxury; on a phone it was
+   costing the week grid and the timeline the room they needed. */
+@media (max-width: 420px) {
+  .card--calm { padding: var(--space-5) var(--space-4); }
+  .timeline__row { gap: var(--space-3); }
+  .timeline__time { min-width: 2.75rem; }
+}
+
+/* ---- looking back: balance, mood over time, what comes up most ----------- */
+
+.trends__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.trends__summary { margin-top: var(--space-1); font-size: var(--text-sm); }
+.trends__range { width: auto; }
+
+.trends { display: flex; flex-direction: column; gap: var(--space-6); }
+.trends[hidden] { display: none; }
+.trend { display: flex; flex-direction: column; gap: var(--space-3); }
+.trend__title {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.tone-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--tone-even);
+}
+.tone-dot--good { background: var(--tone-good); }
+.tone-dot--difficult { background: var(--tone-difficult); }
+
+/* Balance: one split bar. The parts grow by count, so the split is exact. */
+.balance__bar { display: flex; gap: 3px; height: 12px; }
+.balance__part {
+  flex-basis: 0;
+  min-width: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--tone-even);
+}
+.balance__part--good { background: var(--tone-good); }
+.balance__part--difficult { background: var(--tone-difficult); }
+.balance__legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.balance__side { display: inline-flex; align-items: center; gap: 6px; }
+.balance__side strong { color: var(--text); font-weight: var(--weight-semibold); }
+
+/* Mood over time: a line, so a fixed height reads fine at any number of days. */
+.chart--mood { height: 200px; }
+@media (min-width: 640px) { .chart--mood { height: 230px; } }
+.trend__key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+}
+.trend__key .tone-dot--difficult { margin-left: var(--space-2); }
+.trend__key-note { margin-left: auto; }
+
+/* What comes up most: one row per feeling, ~36px each, so the block is as
+   tall as the list. Subgrid keeps the labels, bars and numbers in three
+   aligned columns across rows; without it each row sizes its own label
+   column, which only costs the alignment. */
+.feeling-bars {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  column-gap: var(--space-3);
+  /* Past this the bars get so long that 5 against 6 stops being visible. */
+  max-width: 44rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.feeling-bar {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: 7.5rem minmax(0, 1fr) auto;
+  column-gap: var(--space-3);
+  align-items: center;
+  min-height: 36px;
+}
+@supports (grid-template-columns: subgrid) {
+  .feeling-bar { grid-template-columns: subgrid; }
+}
+.feeling-bar__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+.feeling-bar__icon { width: 1.25em; text-align: center; }
+.feeling-bar__track {
+  height: 10px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunk);
+}
+/* Full width, clipped to its share with rounded ends. scaleX would squash
+   the rounding on short bars; a clip keeps it, and still skips layout. */
+.feeling-bar__fill {
+  --share: 0;
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--feeling);
+  clip-path: inset(0 calc((1 - var(--share)) * 100%) 0 0 round var(--radius-pill));
+  transition: clip-path var(--duration-slow) var(--ease-out) calc(var(--i, 0) * 40ms);
+}
+@starting-style {
+  .feeling-bar__fill { clip-path: inset(0 100% 0 0 round var(--radius-pill)); }
+}
+.feeling-bar__value {
+  display: inline-flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.feeling-bar__pct { min-width: 4ch; text-align: right; color: var(--text-faint); }
+
+/* Stand-ins while the entries load, the shape of what replaces them. */
+.skeleton--balance { height: 12px; border-radius: var(--radius-pill); }
+.skeleton--fill { position: absolute; inset: 0; border-radius: var(--radius-md); }
+.skeleton--bar-row { height: 18px; margin-block: 9px; border-radius: var(--radius-pill); }
+.skeleton--week { height: 170px; border-radius: var(--radius-md); }
 
 /* ==========================================================================
    Settings — editable lists
