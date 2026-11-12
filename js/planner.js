@@ -10,15 +10,15 @@
  * edited where they live, on the Tasks page.
  */
 
-import { supabase, describeError } from './supabase.js?v=43';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=43';
-import { requireActiveProfile } from './profiles.js?v=43';
+import { supabase, describeError } from './supabase.js?v=44';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=44';
+import { requireActiveProfile } from './profiles.js?v=44';
 import {
   el, clear, toast, topbar, emptyState, setBusy, showBanner, swatchPicker,
   formatDate, todayISO, applyProfileTheme,
-} from './ui.js?v=43';
-import { EVENT_COLOURS, PRIORITIES, eventColour, labelFor } from './constants.js?v=43';
-import { mountGreeting } from './greetings.js?v=43';
+} from './ui.js?v=44';
+import { EVENT_COLOURS, PRIORITIES, eventColour, labelFor } from './constants.js?v=44';
+import { mountGreeting } from './greetings.js?v=44';
 
 const state = {
   profile: null,

@@ -4341,73 +4341,239 @@ body[data-figure='female'] .climb__bow { display: block; }
 
 .voice-notes {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: var(--space-2);
   margin-top: var(--space-1);
   padding: 0;
   list-style: none;
+  /* Narrow lists rearrange the note (see the @container rule below). */
+  container-type: inline-size;
 }
 
-/* A pill that fills from the left as it plays, so the position is readable
-   without a scrubber. */
+/* A voice message the way chat apps draw one: play, a waveform that fills as
+   it plays, the time under it, the speed pill. Download and delete sit
+   outside the bubble because they act on the file, not the playback. */
 .voice-note {
-  --progress: 0;
-  position: relative;
-  display: inline-flex;
-  align-items: stretch;
-  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 26rem;
+}
+
+.voice-note__bubble {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'play wave speed'
+    'play time speed';
+  align-items: center;
+  column-gap: var(--space-3);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
   border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-lg);
   background: var(--surface-2);
 }
-.voice-note::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: rgb(var(--accent-rgb) / 0.16);
-  transform: scaleX(var(--progress));
-  transform-origin: left;
-  transition: transform 250ms linear;
-  pointer-events: none;
-}
-.voice-note[data-state='idle']::before { transition: none; }
 
 .voice-note__play {
+  grid-area: play;
   position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 32px;
-  padding: 3px var(--space-3) 3px 3px;
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-}
-.voice-note__glyph {
-  width: 26px;
-  height: 26px;
-  padding: 7px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: var(--accent);
   color: var(--text-on-accent);
+  transition: transform var(--duration-fast) var(--ease-out);
 }
+.voice-note__play:active { transform: scale(0.94); }
+.voice-note__glyph { width: 16px; height: 16px; }
 .voice-note__glyph--pause,
 .voice-note[data-state='playing'] .voice-note__glyph--play { display: none; }
 .voice-note[data-state='playing'] .voice-note__glyph--pause { display: block; }
 
-.voice-note__delete {
+/* The slider. touch-action: none, or iPhone Safari reads a drag along it as
+   a scroll and cancels the pointer halfway. */
+.voice-note__wave {
+  grid-area: wave;
   position: relative;
-  padding-inline: var(--space-3);
-  border-left: var(--border-width) solid var(--border);
-  font-size: var(--text-md);
+  height: 26px;
+  touch-action: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* The hit area is taller than the bars, so a finger doesn't have to land on
+   a 26px strip. */
+.voice-note__wave::after {
+  content: '';
+  position: absolute;
+  inset: -9px 0;
+}
+
+/* Larger than the waveform by the knob's reach, so a knob at either end
+   isn't cut in half, while anything further out is clipped. */
+.voice-note__track {
+  position: absolute;
+  inset: -11px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.voice-note__bars {
+  position: absolute;
+  inset: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1px;
+  pointer-events: none;
+}
+.voice-note__bar {
+  flex: 0 1 2px;
+  min-width: 1px;
+  border-radius: var(--radius-pill);
+  background: var(--text-faint);
+}
+.voice-note__wave[data-placeholder='true'] .voice-note__bars:not(.voice-note__bars--played) .voice-note__bar {
+  opacity: 0.55;
+}
+/* Clipped to the played part by tasks.js, one property per frame. */
+.voice-note__bars--played { clip-path: inset(0 100% 0 0); }
+.voice-note__bars--played .voice-note__bar { background: var(--accent); }
+
+/* Spans the waveform, so translateX(n%) of its own width lands the knob at
+   n% of the waveform. */
+.voice-note__head {
+  position: absolute;
+  inset: 11px;
+  pointer-events: none;
+}
+.voice-note__knob {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--surface-2);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.voice-note[data-dragging='true'] .voice-note__knob { transform: scale(1.35); }
+
+.voice-note__time {
+  grid-area: time;
+  padding-top: 3px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
   line-height: 1;
+  color: var(--text-muted);
+}
+
+.voice-note__speed {
+  grid-area: speed;
+  position: relative;
+  min-width: 34px;
+  height: 24px;
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.voice-note__tools { display: flex; flex-shrink: 0; }
+.voice-note__tool {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
   color: var(--text-faint);
   transition: color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
 }
-.voice-note__delete:hover { color: var(--negative); background: var(--negative-soft); }
+.voice-note__tool svg { width: 18px; height: 18px; }
+.voice-note__tool[aria-busy='true'] { color: var(--text-muted); cursor: progress; }
+.voice-note__tool[aria-busy='true'] svg { display: none; }
+.voice-note__tool[aria-busy='true']::after {
+  content: '';
+  width: 15px;
+  height: 15px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 620ms linear infinite;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .voice-note__tool:hover { color: var(--text); background: var(--surface-2); }
+  .voice-note__tool--delete:hover { color: var(--negative); background: var(--negative-soft); }
+  .voice-note__speed:hover { color: var(--text); }
+}
+
 .voice-note__play:focus-visible,
-.voice-note__delete:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; border-radius: var(--radius-pill); }
+.voice-note__speed:focus-visible,
+.voice-note__tool:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.voice-note__wave:focus-visible { outline: 2px solid var(--focus); outline-offset: 6px; border-radius: var(--radius-sm); }
+
+/* Phones: every target at least 44px. Play and speed grow their hit area
+   rather than their size, so the waveform keeps its width. */
+@media (pointer: coarse) {
+  .voice-note__play { width: 40px; height: 40px; }
+  .voice-note__play::after { content: ''; position: absolute; inset: -2px; }
+  .voice-note__glyph { width: 18px; height: 18px; }
+  .voice-note__speed::after { content: ''; position: absolute; inset: -11px -6px; }
+  .voice-note__tool { width: 44px; height: 44px; }
+  .voice-note__tool svg { width: 20px; height: 20px; }
+}
+
+/* A phone-width list: with download and delete beside the bubble, the
+   waveform was left ~55px. So the whole note becomes the bubble, and the
+   controls drop to a second row under the waveform:
+
+     ▶  ▁▃▅▇▅▃▁▃▅▇▅▃▁▃▅▇▅▃▁
+        0:12      1×  ⤓  ✕
+
+   The bubble and tools wrappers step aside (display: contents) so their
+   children land in the note's own grid. */
+@container (max-width: 380px) {
+  .voice-note {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+    grid-template-areas:
+      'play wave wave     wave     wave'
+      'play time speed    download delete';
+    align-items: center;
+    column-gap: var(--space-2);
+    row-gap: 6px;
+    max-width: none;
+    padding: var(--space-3) var(--space-1) 0 var(--space-2);
+    border: var(--border-width) solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface-2);
+  }
+  .voice-note__bubble,
+  .voice-note__tools { display: contents; }
+  .voice-note__play { margin-right: var(--space-1); }
+  .voice-note__wave { margin-right: var(--space-3); }
+  /* Taller upwards than downwards, so it never overlaps the row of buttons. */
+  .voice-note__wave::after { inset: -12px 0 -6px; }
+  .voice-note__time { padding-top: 0; }
+  .voice-note__speed { justify-self: end; }
+  .voice-note__tool--download { grid-area: download; }
+  .voice-note__tool--delete { grid-area: delete; }
+}
 
 /* Recording is the one place red means something other than money: it is the
    universal "the microphone is live" signal, and it must not be missed. */
@@ -4452,12 +4618,6 @@ body[data-figure='female'] .climb__bow { display: block; }
   transition: width 200ms linear;
 }
 .recorder__buttons { display: flex; gap: var(--space-2); }
-
-@media (pointer: coarse) {
-  .voice-note__play { min-height: 44px; padding-right: var(--space-4); }
-  .voice-note__glyph { width: 34px; height: 34px; padding: 9px; }
-  .voice-note__delete { min-width: 44px; }
-}
 
 @media (max-width: 420px) {
   .recorder__buttons { flex: 1 1 100%; }
@@ -4865,4 +5025,115 @@ body[data-figure='female'] .climb__bow { display: block; }
   .planner-day__title { font-size: var(--text-md); }
   .planner-hours { --hour: 52px; --gutter: 48px; height: 62dvh; }
   .planner-tasks { padding-inline: var(--space-3); }
+}
+
+/* ==========================================================================
+   Opening splash (js/splash.js)
+   Phones only, once per launch. Every delay is offset by --splash-at, which
+   splash.js sets negative on the pages after the first, so a redirect picks
+   the animation up mid-flight instead of restarting it.
+
+     120–875ms    letters rise, 55ms apart
+     700–1260ms   the dot falls, lands with a squash, settles with one bounce
+     1040–1500ms  the streak line draws under the word
+     1550–1900ms  the splash fades into the page (TOTAL in splash.js)
+   ========================================================================== */
+
+.splash {
+  --splash-at: 0ms;
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-splash);
+  display: grid;
+  place-items: center;
+  /* <body> is visibility:hidden while [data-booting]; the splash must not be. */
+  visibility: visible;
+  background: var(--bg);
+  color: var(--text);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+  animation: splash-out 350ms var(--ease-out) calc(var(--splash-at) + 1550ms) forwards;
+}
+
+.splash__word {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  padding-bottom: 0.28em;
+  font-family: var(--font-display);
+  font-weight: var(--weight-bold);
+  font-size: clamp(3.25rem, 17vw, 5rem);
+  line-height: 1;
+  letter-spacing: var(--tracking-tight);
+}
+
+.splash__letter,
+.splash__dot,
+.splash__dot-fall { display: inline-block; }
+
+.splash__letter {
+  animation: splash-rise 480ms var(--ease-out) calc(var(--splash-at) + 120ms + var(--i) * 55ms) both;
+}
+
+/* Two elements so the fade and the fall get their own curves: the fade is
+   quick and early, the fall accelerates the whole way down. */
+.splash__dot {
+  color: var(--accent);
+  animation: splash-appear 160ms var(--ease-out) calc(var(--splash-at) + 700ms) both;
+}
+.splash__dot-fall {
+  transform-origin: 50% 100%;
+  animation: splash-drop 560ms linear calc(var(--splash-at) + 700ms) both;
+}
+
+.splash__line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0.06em;
+  height: 0.09em;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  transform-origin: left center;
+  animation: splash-draw 460ms var(--ease-in-out) calc(var(--splash-at) + 1040ms) both;
+}
+
+@keyframes splash-rise {
+  from { opacity: 0; transform: translateY(0.42em); }
+}
+@keyframes splash-appear {
+  from { opacity: 0; }
+}
+/* Gravity, so the curve changes per segment: easeInQuad on the way down
+   (cubic-bezier(0.11, 0, 0.5, 0)), easeOutCubic on the rebound
+   (cubic-bezier(0.33, 1, 0.68, 1)). The squash on impact is what sells the
+   landing; keep it small or it turns cartoonish. */
+@keyframes splash-drop {
+  0% {
+    transform: translateY(-1.15em) scale(1, 1);
+    animation-timing-function: cubic-bezier(0.11, 0, 0.5, 0);
+  }
+  55% {
+    transform: translateY(0) scale(1.12, 0.88);
+    animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+  }
+  77% {
+    transform: translateY(-0.14em) scale(0.97, 1.04);
+    animation-timing-function: cubic-bezier(0.11, 0, 0.5, 0);
+  }
+  100% { transform: translateY(0) scale(1, 1); }
+}
+@keyframes splash-draw {
+  from { transform: scaleX(0); }
+}
+@keyframes splash-out {
+  to { opacity: 0; visibility: hidden; }
+}
+
+/* splash.js already stays away in this case; this covers a page that turns
+   the attribute on after the script ran. */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-motion='system'] .splash { display: none; }
 }

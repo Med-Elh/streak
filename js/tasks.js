@@ -6,17 +6,17 @@
  * and the deadline rather than a checkbox.
  */
 
-import { supabase, describeError } from './supabase.js?v=43';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=43';
-import { requireActiveProfile } from './profiles.js?v=43';
+import { supabase, describeError } from './supabase.js?v=44';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=44';
+import { requireActiveProfile } from './profiles.js?v=44';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
   statRing, formatDate, todayISO, beat,
   applyProfileTheme,
-} from './ui.js?v=43';
-import { PRIORITIES, OBJECTIVE_STATUSES, OBJECTIVE_UNITS, options, labelFor } from './constants.js?v=43';
+} from './ui.js?v=44';
+import { PRIORITIES, OBJECTIVE_STATUSES, OBJECTIVE_UNITS, options, labelFor } from './constants.js?v=44';
 
-import { mountGreeting } from './greetings.js?v=43';
+import { mountGreeting } from './greetings.js?v=44';
 
 const state = {
   profile: null,
@@ -28,6 +28,11 @@ const state = {
   notesReady: false,  // false until they load; the mic stays hidden if they can't
   urls: new Map(),    // storage path → { url, expires }, signed URLs for playback
   recording: null,    // { taskId, phase: 'starting' | 'recording' | 'saving', … }
+  peaksColumn: true,  // false until the waveform migration has been run
+  peaks: new Map(),   // note id → bar heights decoded this visit, for notes saved without them
+  positions: new Map(), // note id → ms, where each note not currently loaded was left
+  downloads: new Map(), // note id → File, fetched but not yet handed to the share sheet
+  speed: 1,
 };
 
 let refs = {};
@@ -67,6 +72,18 @@ const EXTENSIONS = {
 
 /* PostgREST's "no such table": the voice-notes migration hasn't been run. */
 const MISSING_TABLE = new Set(['42P01', 'PGRST205']);
+/* …and "no such column": the waveform one hasn't. */
+const MISSING_COLUMN = new Set(['42703', 'PGRST204']);
+
+/* Bars in a waveform. Enough to show the shape of speech, few enough to stay
+   at least 2px wide with a gap on a phone. */
+export const PEAK_COUNT = 40;
+const SEEK_STEP_MS = 5000;
+export const SPEEDS = [1, 1.5, 2];
+/* Per viewer and per visit, like WhatsApp: a convenience, not data. */
+const SPEED_KEY = 'streak.voice_speed';
+
+const NOTE_COLUMNS = 'id, task_id, path, mime_type, duration_ms, created_at';
 
 /** The first type this browser's MediaRecorder will produce, or '' to let it choose. */
 export function pickRecordingType(isSupported = (type) => window.MediaRecorder?.isTypeSupported?.(type)) {
@@ -97,6 +114,121 @@ export function extensionFor(type) {
 export function formatDuration(ms) {
   const seconds = Math.max(0, Math.round(Number(ms) / 1000) || 0);
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+/**
+ * Bar heights (0–100) from decoded channel data: the RMS of each slice, scaled
+ * so the loudest bar is 100. RMS rather than the peak sample, because a single
+ * click would otherwise flatten everything else; and every few samples is
+ * plenty for a picture 40 bars wide.
+ */
+export function peaksFromChannels(channels, count = PEAK_COUNT) {
+  const length = channels[0]?.length ?? 0;
+  if (!length || !count) return null;
+
+  const slice = length / count;
+  const raw = [];
+  for (let bar = 0; bar < count; bar++) {
+    const start = Math.floor(bar * slice);
+    const end = Math.max(start + 1, Math.floor((bar + 1) * slice));
+    const step = Math.max(1, Math.floor((end - start) / 400));
+    let sum = 0;
+    let n = 0;
+    for (const data of channels) {
+      for (let i = start; i < end && i < length; i += step) {
+        sum += data[i] * data[i];
+        n++;
+      }
+    }
+    raw.push(n ? Math.sqrt(sum / n) : 0);
+  }
+
+  const max = Math.max(...raw);
+  return raw.map((v) => (max > 0 ? Math.round((v / max) * 100) : 0));
+}
+
+/** Any stored list of heights, stretched or squeezed to `count` bars. */
+export function resamplePeaks(peaks, count = PEAK_COUNT) {
+  if (!Array.isArray(peaks) || !peaks.length) return null;
+  if (peaks.length === count) return peaks.map(clampPeak);
+  return Array.from({ length: count }, (_, i) => clampPeak(peaks[Math.floor((i * peaks.length) / count)]));
+}
+
+function clampPeak(value) {
+  const n = Math.round(Number(value));
+  return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 0;
+}
+
+/* One decoder for the page. Offline, because a live AudioContext can take
+   over the phone's audio session just by existing. */
+let decoder = null;
+function decodingContext() {
+  if (decoder) return decoder;
+  const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  if (Offline) {
+    try {
+      decoder = new Offline(1, 1, 44100);
+      return decoder;
+    } catch { /* Fall through to a live one. */ }
+  }
+  const Live = window.AudioContext || window.webkitAudioContext;
+  decoder = Live ? new Live() : null;
+  return decoder;
+}
+
+async function peaksFromBlob(blob) {
+  const context = decodingContext();
+  if (!context) throw new Error('Web Audio isn’t available.');
+  const bytes = await blob.arrayBuffer();
+  // Older Safari only has the callback form, and never returns a promise.
+  const buffer = await new Promise((resolve, reject) => {
+    const result = context.decodeAudioData(bytes, resolve, reject);
+    result?.then?.(resolve, reject);
+  });
+  const channels = [];
+  for (let c = 0; c < buffer.numberOfChannels; c++) channels.push(buffer.getChannelData(c));
+  return peaksFromChannels(channels);
+}
+
+/**
+ * "Call the bank – voice note 2026-11-12 14.05.m4a". Characters Windows, macOS
+ * or iOS Files refuse are dropped, and leading dots too, so it can't become a
+ * hidden file.
+ */
+export function voiceNoteFileName(title, createdAt, mime) {
+  const clean = String(title ?? '')
+    .replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[.\s]+|[.\s]+$/g, '')
+    .slice(0, 80)
+    .trim() || 'Task';
+
+  const date = new Date(createdAt);
+  let stamp = '';
+  if (!Number.isNaN(date.getTime())) {
+    const pad = (n) => String(n).padStart(2, '0');
+    stamp = ` ${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+      + ` ${pad(date.getHours())}.${pad(date.getMinutes())}`;
+  }
+  return `${clean} – voice note${stamp}.${extensionFor(mime)}`;
+}
+
+export function nextSpeed(speed) {
+  const index = SPEEDS.indexOf(speed);
+  return SPEEDS[(index + 1) % SPEEDS.length];
+}
+
+export function speedLabel(speed) {
+  return `${speed}×`;
+}
+
+function savedSpeed() {
+  try {
+    const value = Number(sessionStorage.getItem(SPEED_KEY));
+    return SPEEDS.includes(value) ? value : 1;
+  } catch {
+    return 1;
+  }
 }
 
 function spokenDuration(ms) {
@@ -249,11 +381,19 @@ async function fetchObjectives() {
 
 /** Every voice note on this profile's tasks, in one query through the join. */
 async function fetchNotes() {
-  const { data, error } = await supabase
+  const query = (columns) => supabase
     .from('task_audio')
-    .select('id, task_id, path, mime_type, duration_ms, created_at, tasks!inner(profile_id)')
+    .select(`${columns}, tasks!inner(profile_id)`)
     .eq('tasks.profile_id', state.profile.id)
     .order('created_at', { ascending: true });
+
+  let { data, error } = await query(`${NOTE_COLUMNS}, peaks`);
+  // The site goes live on push and the SQL is run by hand afterwards: until
+  // the waveform migration is in, notes still load, just without peaks.
+  if (error && MISSING_COLUMN.has(error.code)) {
+    state.peaksColumn = false;
+    ({ data, error } = await query(NOTE_COLUMNS));
+  }
 
   if (error) {
     if (MISSING_TABLE.has(error.code)) {
@@ -293,6 +433,8 @@ async function signUrls(paths) {
 /* ----------------------------------------------------------- render tasks -- */
 
 function renderTasks() {
+  // The waveform under a finger is about to be replaced; its drag goes with it.
+  drag = null;
   const open = sortTasks(filterTasks(state.tasks, state.filter));
   clear(refs.taskList);
 
@@ -439,32 +581,120 @@ function micButton(task) {
 function voiceNotes(task) {
   const notes = notesFor(task.id);
   if (!notes.length) return null;
-  return el('ul', { class: 'voice-notes', 'aria-label': 'Voice notes' }, notes.map(noteChip));
+  return el('ul', { class: 'voice-notes', 'aria-label': 'Voice notes' }, notes.map((note) => noteChip(note, task)));
 }
 
-function noteChip(note) {
+const DOWNLOAD_SVG = `
+<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9"
+  stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 4.5v10.5M7.5 10.5 12 15l4.5-4.5M5.5 19.5h13" />
+</svg>`;
+
+const DELETE_SVG = `
+<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9"
+  stroke-linecap="round">
+  <path d="M7 7l10 10M17 7 7 17" />
+</svg>`;
+
+/**
+ * A voice message the way WhatsApp draws one: play, the waveform you can drag
+ * along, the time under it, and the speed pill. Download and delete sit
+ * outside the bubble, because they act on the file rather than the playback.
+ */
+function noteChip(note, task) {
+  const title = task?.title ?? 'this task';
+
   const play = el('button', {
     class: 'voice-note__play',
     type: 'button',
     onclick: () => togglePlayback(note),
   });
   play.innerHTML = `${PLAY_SVG}${PAUSE_SVG}`;
-  play.append(el('span', { class: 'voice-note__time', text: formatDuration(note.duration_ms) }));
+
+  const wave = el('div', {
+    class: 'voice-note__wave',
+    role: 'slider',
+    tabindex: '0',
+    'aria-label': `Position in voice note on ${title}`,
+    'aria-valuemin': '0',
+    'aria-valuemax': String(Math.round(noteLength(note) / 1000)),
+    'aria-valuenow': '0',
+  }, [
+    // The track clips the moving head: translated, its box reaches past the
+    // waveform, and unclipped that would widen the page on a phone.
+    el('span', { class: 'voice-note__track' }, [
+      el('span', { class: 'voice-note__bars' }),
+      el('span', { class: 'voice-note__bars voice-note__bars--played', 'aria-hidden': 'true' }),
+      el('span', { class: 'voice-note__head', 'aria-hidden': 'true' }, el('span', { class: 'voice-note__knob' })),
+    ]),
+  ]);
+  drawBars(wave, note);
+  wireScrubbing(wave, note);
+
+  const download = el('button', {
+    class: 'voice-note__tool voice-note__tool--download',
+    type: 'button',
+    'aria-label': `Download voice note on ${title}`,
+    title: 'Download voice note',
+    onclick: (event) => downloadNote(note, event.currentTarget),
+  });
+  download.innerHTML = DOWNLOAD_SVG;
+
+  const remove = el('button', {
+    class: 'voice-note__tool voice-note__tool--delete',
+    type: 'button',
+    'aria-label': `Delete voice note on ${title}`,
+    title: 'Delete voice note',
+    onclick: () => removeNote(note),
+  });
+  remove.innerHTML = DELETE_SVG;
 
   const chip = el('li', { class: 'voice-note', dataset: { noteId: note.id } }, [
-    play,
-    el('button', {
-      class: 'voice-note__delete',
-      type: 'button',
-      text: '×',
-      'aria-label': 'Delete this voice note',
-      title: 'Delete voice note',
-      onclick: () => removeNote(note),
-    }),
+    el('div', { class: 'voice-note__bubble' }, [
+      play,
+      wave,
+      el('span', { class: 'voice-note__time', 'aria-hidden': 'true' }),
+      el('button', {
+        class: 'voice-note__speed',
+        type: 'button',
+        onclick: cycleSpeed,
+      }),
+    ]),
+    el('div', { class: 'voice-note__tools' }, [download, remove]),
   ]);
 
   paintChip(chip, note);
   return chip;
+}
+
+/** Saved peaks, or decoded this visit, or — until then or if decoding fails — even placeholders. */
+function peaksFor(note) {
+  return resamplePeaks(note.peaks) ?? resamplePeaks(state.peaks.get(note.id));
+}
+
+/* Both layers get the same bars; the accent one on top is clipped to the
+   played part, so filling is one property on one element per frame. */
+function drawBars(wave, note) {
+  const heights = peaksFor(note);
+  wave.dataset.placeholder = String(!heights);
+  for (const layer of wave.querySelectorAll('.voice-note__bars')) {
+    clear(layer);
+    for (let i = 0; i < PEAK_COUNT; i++) {
+      // A floor, so silence still reads as a bar rather than a gap.
+      const height = heights ? 14 + heights[i] * 0.86 : 34;
+      layer.append(el('span', { class: 'voice-note__bar', style: `height: ${height.toFixed(1)}%` }));
+    }
+  }
+}
+
+function redrawBars(noteId) {
+  const note = state.notes.find((n) => n.id === noteId);
+  const wave = chipFor(noteId)?.querySelector('.voice-note__wave');
+  if (note && wave) drawBars(wave, note);
+}
+
+function chipFor(noteId) {
+  return [...document.querySelectorAll('.voice-note')].find((chip) => chip.dataset.noteId === noteId) ?? null;
 }
 
 /** The recorder, in place of nothing, inside the card it is recording for. */
@@ -855,17 +1085,30 @@ async function saveNote(task, blob, durationMs) {
     .upload(path, blob, { contentType: mime, cacheControl: '3600', upsert: false });
   if (uploadError) throw new Error(storageMessage(uploadError, 'Couldn’t upload that voice note.'));
 
-  const { data, error } = await supabase
+  // Worked out once here, from the blob already in memory, so no one has to
+  // download the file again just to draw it. A failed decode still saves the
+  // note; it just gets placeholder bars.
+  const peaks = await peaksFromBlob(blob).catch(() => null);
+
+  const row = {
+    task_id: task.id,
+    path,
+    mime_type: mime,
+    duration_ms: Math.round(durationMs),
+    size_bytes: blob.size,
+  };
+  const insert = (withPeaks) => supabase
     .from('task_audio')
-    .insert({
-      task_id: task.id,
-      path,
-      mime_type: mime,
-      duration_ms: Math.round(durationMs),
-      size_bytes: blob.size,
-    })
-    .select('id, task_id, path, mime_type, duration_ms, created_at')
+    .insert(withPeaks ? { ...row, peaks } : row)
+    .select(withPeaks ? `${NOTE_COLUMNS}, peaks` : NOTE_COLUMNS)
     .single();
+
+  let { data, error } = await insert(state.peaksColumn);
+  if (error && state.peaksColumn && MISSING_COLUMN.has(error.code)) {
+    state.peaksColumn = false;
+    ({ data, error } = await insert(false));
+  }
+  if (data && peaks && !data.peaks) state.peaks.set(data.id, peaks);
 
   if (error) {
     // A file with no row is invisible and undeletable from the app — take it back.
@@ -879,16 +1122,34 @@ async function saveNote(task, blob, durationMs) {
 
 /* --------------------------------------------------------------- playback -- */
 
-/* One player for the whole page: starting a note stops whichever was playing. */
-const player = { audio: null, noteId: null };
+/*
+ * One player for the whole page: starting a note stops whichever was playing.
+ *
+ * `startAt` is where a note picks up once it loads. The element can't seek
+ * until it knows the file's length, so the jump waits for loadedmetadata, and
+ * until then the waveform shows startAt rather than flicking back to zero.
+ */
+const player = { audio: null, noteId: null, startAt: null, frame: 0 };
+
+/* The finger or mouse on a waveform right now: { noteId, pointerId, rect, ms }. */
+let drag = null;
 
 function audioElement() {
   if (player.audio) return player.audio;
   const audio = new Audio();
   audio.preload = 'none';
-  for (const event of ['play', 'pause', 'timeupdate', 'loadedmetadata']) {
-    audio.addEventListener(event, paintPlaying);
-  }
+  audio.addEventListener('loadedmetadata', () => {
+    if (player.startAt !== null) {
+      audio.currentTime = player.startAt / 1000;
+      player.startAt = null;
+    }
+    paintPlaying();
+  });
+  audio.addEventListener('play', () => {
+    paintPlaying();
+    followPlayback();
+  });
+  for (const event of ['pause', 'seeked', 'durationchange']) audio.addEventListener(event, paintPlaying);
   audio.addEventListener('ended', () => {
     audio.currentTime = 0;
     paintPlaying();
@@ -898,24 +1159,86 @@ function audioElement() {
   return audio;
 }
 
+/* timeupdate fires about four times a second, which makes the fill step.
+   A frame loop, only while something is playing, makes it glide. */
+function followPlayback() {
+  cancelAnimationFrame(player.frame);
+  const step = () => {
+    const audio = player.audio;
+    if (!audio || audio.paused || audio.ended) {
+      player.frame = 0;
+      return;
+    }
+    const note = state.notes.find((n) => n.id === player.noteId);
+    const chip = note && chipFor(note.id);
+    if (chip) paintChip(chip, note);
+    player.frame = requestAnimationFrame(step);
+  };
+  player.frame = requestAnimationFrame(step);
+}
+
+/* The measured length wins: Chrome's webm recordings report Infinity. */
+function noteLength(note) {
+  const stored = Number(note.duration_ms);
+  if (stored > 0) return stored;
+  const audio = player.audio;
+  if (player.noteId === note.id && audio && Number.isFinite(audio.duration)) return audio.duration * 1000;
+  return 0;
+}
+
+function positionOf(note) {
+  if (drag?.noteId === note.id) return drag.ms;
+  if (player.noteId === note.id && player.audio) return player.startAt ?? player.audio.currentTime * 1000;
+  return state.positions.get(note.id) ?? 0;
+}
+
+/* Painted every frame while playing, so nothing is written that hasn't changed. */
+function setText(node, value) {
+  if (node && node.textContent !== value) node.textContent = value;
+}
+function setAttr(node, name, value) {
+  if (node && node.getAttribute(name) !== value) node.setAttribute(name, value);
+}
+
 function paintChip(chip, note) {
   const audio = player.audio;
   const active = player.noteId === note.id && audio;
   const playing = Boolean(active && !audio.paused && !audio.ended);
-  const position = active ? audio.currentTime * 1000 : 0;
-  const total = Number(note.duration_ms) || (active && Number.isFinite(audio.duration) ? audio.duration * 1000 : 0);
+  const total = noteLength(note);
+  const position = Math.max(0, total ? Math.min(positionOf(note), total) : 0);
+  const fraction = total ? position / total : 0;
+  const shown = Math.floor(position / 1000) * 1000;
 
-  chip.dataset.state = playing ? 'playing' : (active && position > 0 ? 'paused' : 'idle');
-  chip.style.setProperty('--progress', total ? String(Math.min(position / total, 1)) : '0');
+  const status = playing ? 'playing' : (position > 0 ? 'paused' : 'idle');
+  if (chip.dataset.state !== status) chip.dataset.state = status;
+  const dragging = String(drag?.noteId === note.id);
+  if (chip.dataset.dragging !== dragging) chip.dataset.dragging = dragging;
 
-  const time = chip.querySelector('.voice-note__time');
-  // Counting up while it plays, the full length at rest.
-  if (time) time.textContent = formatDuration(chip.dataset.state === 'idle' ? note.duration_ms : position);
+  // Transform on the head and clip on the played layer: both skip layout.
+  // The head spans the waveform, so a percentage of its own width is a
+  // percentage of the waveform's.
+  const played = chip.querySelector('.voice-note__bars--played');
+  const head = chip.querySelector('.voice-note__head');
+  if (played) played.style.clipPath = `inset(0 ${((1 - fraction) * 100).toFixed(2)}% 0 0)`;
+  if (head) head.style.transform = `translateX(${(fraction * 100).toFixed(2)}%)`;
 
-  chip.querySelector('.voice-note__play')?.setAttribute(
+  // The full length at rest, the position once it has one.
+  setText(chip.querySelector('.voice-note__time'), formatDuration(status === 'idle' ? total : shown));
+
+  const wave = chip.querySelector('.voice-note__wave');
+  setAttr(wave, 'aria-valuemax', String(Math.round(total / 1000)));
+  setAttr(wave, 'aria-valuenow', String(Math.floor(position / 1000)));
+  setAttr(wave, 'aria-valuetext', `${spokenDuration(shown)} of ${spokenDuration(total)}`);
+
+  setAttr(
+    chip.querySelector('.voice-note__play'),
     'aria-label',
-    playing ? 'Pause voice note' : `Play voice note, ${spokenDuration(note.duration_ms)}`,
+    playing ? 'Pause voice note' : `Play voice note, ${spokenDuration(total)}`,
   );
+
+  const speed = chip.querySelector('.voice-note__speed');
+  setText(speed, speedLabel(state.speed));
+  setAttr(speed, 'aria-label', `Playback speed ${speedLabel(state.speed)}. Switch to ${speedLabel(nextSpeed(state.speed))}.`);
 }
 
 function paintPlaying() {
@@ -925,10 +1248,37 @@ function paintPlaying() {
   }
 }
 
+/** Where the note being left was, so going back to it carries on from there. */
+function rememberPosition() {
+  if (!player.noteId || !player.audio) return;
+  const ms = player.startAt ?? player.audio.currentTime * 1000;
+  if (ms > 0) state.positions.set(player.noteId, ms);
+  else state.positions.delete(player.noteId);
+}
+
 function stopPlayback() {
   if (!player.audio) return;
   player.audio.pause();
+  rememberPosition();
   player.noteId = null;
+  player.startAt = null;
+  paintPlaying();
+}
+
+/* A new src resets playbackRate to the default, so both are set. */
+function applySpeed(audio) {
+  audio.defaultPlaybackRate = state.speed;
+  audio.playbackRate = state.speed;
+}
+
+function cycleSpeed() {
+  state.speed = nextSpeed(state.speed);
+  try {
+    sessionStorage.setItem(SPEED_KEY, String(state.speed));
+  } catch {
+    /* Storage blocked: the speed still holds until the page is left. */
+  }
+  if (player.audio) applySpeed(player.audio);
   paintPlaying();
 }
 
@@ -952,8 +1302,12 @@ async function togglePlayback(note) {
   const audio = audioElement();
 
   if (player.noteId === note.id && audio.src) {
-    if (audio.paused) startAudio(audio);
-    else audio.pause();
+    if (audio.paused) {
+      applySpeed(audio);
+      startAudio(audio);
+    } else {
+      audio.pause();
+    }
     return;
   }
 
@@ -973,10 +1327,101 @@ async function togglePlayback(note) {
   }
 
   audio.pause();
+  rememberPosition();
+
+  // Picks up where it was dragged or left, unless that was the very end.
+  const resumeAt = state.positions.get(note.id) ?? 0;
+  state.positions.delete(note.id);
   player.noteId = note.id;
+  player.startAt = resumeAt > 0 && resumeAt < noteLength(note) - 250 ? resumeAt : null;
+
   audio.src = url;
+  applySpeed(audio);
   paintPlaying();
   startAudio(audio);
+}
+
+/**
+ * The loaded note seeks; any other just remembers the spot, so dragging a note
+ * you aren't listening to never interrupts the one you are.
+ */
+function seekTo(note, ms) {
+  const total = noteLength(note);
+  const target = Math.max(0, Math.min(ms, total));
+
+  if (player.noteId === note.id && player.audio?.src) {
+    if (player.startAt !== null || player.audio.readyState < 1) player.startAt = target;
+    else player.audio.currentTime = target / 1000;
+  } else if (target > 0) {
+    state.positions.set(note.id, target);
+  } else {
+    state.positions.delete(note.id);
+  }
+
+  const chip = chipFor(note.id);
+  if (chip) paintChip(chip, note);
+}
+
+/**
+ * Drag or tap anywhere on the waveform. Pointer events cover a finger and a
+ * mouse alike; touch-action: none in the CSS stops iPhone Safari from taking
+ * the gesture for a scroll. The position follows the finger, and the audio
+ * only jumps on release, so dragging doesn't stutter the sound.
+ */
+function wireScrubbing(wave, note) {
+  const repaint = () => {
+    const chip = wave.closest('.voice-note');
+    if (chip) paintChip(chip, note);
+  };
+  const at = (event, rect) => {
+    const fraction = rect.width ? (event.clientX - rect.left) / rect.width : 0;
+    return Math.min(Math.max(fraction, 0), 1) * noteLength(note);
+  };
+  const mine = (event) => drag?.noteId === note.id && drag.pointerId === event.pointerId;
+
+  wave.addEventListener('pointerdown', (event) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (!noteLength(note)) return;
+    // No text selection, and no compatibility mouse events after the touch.
+    event.preventDefault();
+    wave.focus({ preventScroll: true });
+    try {
+      wave.setPointerCapture(event.pointerId);
+    } catch {
+      /* Capture is a nicety: without it the drag ends at the edge. */
+    }
+    const rect = wave.getBoundingClientRect();
+    drag = { noteId: note.id, pointerId: event.pointerId, rect, ms: at(event, rect) };
+    repaint();
+  });
+
+  wave.addEventListener('pointermove', (event) => {
+    if (!mine(event)) return;
+    drag.ms = at(event, drag.rect);
+    repaint();
+  });
+
+  const release = (commit) => (event) => {
+    if (!mine(event)) return;
+    const { ms } = drag;
+    drag = null;
+    if (commit) seekTo(note, ms);
+    else repaint();
+  };
+  wave.addEventListener('pointerup', release(true));
+  wave.addEventListener('lostpointercapture', release(true));
+  wave.addEventListener('pointercancel', release(false));
+
+  wave.addEventListener('keydown', (event) => {
+    const moves = { ArrowLeft: -SEEK_STEP_MS, ArrowDown: -SEEK_STEP_MS, ArrowRight: SEEK_STEP_MS, ArrowUp: SEEK_STEP_MS };
+    let target;
+    if (moves[event.key] !== undefined) target = positionOf(note) + moves[event.key];
+    else if (event.key === 'Home') target = 0;
+    else if (event.key === 'End') target = noteLength(note);
+    else return;
+    event.preventDefault();
+    seekTo(note, target);
+  });
 }
 
 function onPlaybackError() {
@@ -987,6 +1432,7 @@ function onPlaybackError() {
   state.urls.delete(note.path);
   player.audio.removeAttribute('src');
   player.noteId = null;
+  player.startAt = null;
   paintPlaying();
 
   const playable = player.audio.canPlayType(note.mime_type);
@@ -996,6 +1442,103 @@ function onPlaybackError() {
       : `This browser can’t play ${extensionFor(note.mime_type)} audio. Open the note on the device that recorded it.`,
     { type: 'error' },
   );
+}
+
+/**
+ * Notes saved before waveforms existed, or whose decode failed on the phone
+ * that recorded them: fetched and decoded one at a time once the page is up,
+ * and kept for this visit. A failure leaves the placeholder bars, which is the
+ * defined fallback — the note plays and seeks exactly the same.
+ */
+async function decodeMissingPeaks() {
+  for (const note of [...state.notes]) {
+    if (resamplePeaks(note.peaks) || state.peaks.has(note.id)) continue;
+    try {
+      const { data, error } = await supabase.storage.from(AUDIO_BUCKET).download(note.path);
+      if (error) throw error;
+      state.peaks.set(note.id, await peaksFromBlob(data));
+    } catch {
+      state.peaks.set(note.id, null);
+    }
+    redrawBars(note.id);
+  }
+}
+
+/* -------------------------------------------------------------- download -- */
+
+/*
+ * Phones get the share sheet, because a download link does nothing in the
+ * home-screen app; it's also where iPhone's "Save to Files" lives. Computers
+ * get an ordinary download.
+ */
+function wantsShareSheet() {
+  return window.matchMedia('(pointer: coarse)').matches
+    || window.matchMedia('(display-mode: standalone)').matches
+    || navigator.standalone === true;
+}
+
+async function downloadNote(note, button) {
+  // Fetched by an earlier tap whose permission to open the share sheet ran
+  // out during the download: this tap is fresh, so hand it over now.
+  const ready = state.downloads.get(note.id);
+  if (ready) {
+    await deliverFile(note, ready);
+    return;
+  }
+  if (button.getAttribute('aria-busy') === 'true') return;
+
+  button.setAttribute('aria-busy', 'true');
+  button.disabled = true;
+  let file;
+  try {
+    const { data, error } = await supabase.storage.from(AUDIO_BUCKET).download(note.path);
+    if (error) throw new Error(storageMessage(error, 'Couldn’t download that voice note. Try again.'));
+    const task = state.tasks.find((t) => t.id === note.task_id);
+    const mime = baseMimeType(note.mime_type || data.type);
+    file = new File([data], voiceNoteFileName(task?.title, note.created_at, mime), { type: mime });
+  } catch (error) {
+    toast(error.message || 'Couldn’t download that voice note. Try again.', { type: 'error' });
+    return;
+  } finally {
+    button.removeAttribute('aria-busy');
+    button.disabled = false;
+  }
+
+  await deliverFile(note, file);
+}
+
+async function deliverFile(note, file) {
+  if (wantsShareSheet() && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file] });
+      state.downloads.delete(note.id);
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        // Closed the sheet: nothing to say, and the file stays ready.
+        state.downloads.set(note.id, file);
+      } else if (error?.name === 'NotAllowedError') {
+        // Safari only opens the sheet inside a tap, and the download took
+        // that tap's window. The file is in memory now; the next tap is instant.
+        state.downloads.set(note.id, file);
+        toast('Voice note ready. Tap download again to save it.', { type: 'info' });
+      } else {
+        saveWithLink(file);
+      }
+    }
+    return;
+  }
+  saveWithLink(file);
+}
+
+function saveWithLink(file) {
+  const url = URL.createObjectURL(file);
+  const link = el('a', { href: url, download: file.name, hidden: true });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  // Long enough for the browser to start reading it.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  toast('Voice note downloaded.', { type: 'success', duration: 2000 });
 }
 
 async function removeNote(note) {
@@ -1013,6 +1556,9 @@ async function removeNote(note) {
 
     state.notes = state.notes.filter((n) => n.id !== note.id);
     state.urls.delete(note.path);
+    state.positions.delete(note.id);
+    state.peaks.delete(note.id);
+    state.downloads.delete(note.id);
     renderTasks();
     toast('Voice note deleted.', { type: 'success', duration: 2000 });
   } catch (error) {
@@ -1284,6 +1830,7 @@ export async function initTasksPage() {
   await requireSession();
   const profile = await requireActiveProfile();
   state.profile = profile;
+  state.speed = savedSpeed();
   applyProfileTheme(profile.id);
   mountGreeting(profile);
 
@@ -1374,6 +1921,9 @@ async function loadNotes() {
   } catch (error) {
     toast(error.message, { type: 'error' });
   }
+
+  // Last, and only for notes that have no saved waveform.
+  await decodeMissingPeaks();
 }
 
 function wireControls() {

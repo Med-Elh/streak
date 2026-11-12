@@ -61,13 +61,14 @@ One shared app, several **profiles**. A profile is a person (starts with two, mo
 │   ├── base.css            # Reset, typography, layout primitives
 │   └── components.css      # Buttons, cards, tables, modals, forms, nav
 ├── js/
+│   ├── splash.js           # Opening splash on phones. Classic script in <head>, not a module
 │   ├── supabase.js         # Client init, exported singleton
 │   ├── auth.js             # Sign in/out, session guard, redirect logic
 │   ├── profiles.js         # Profile CRUD, active-profile state
 │   ├── presence.js         # Online status: heartbeat + top-bar strip
 │   ├── chat.js             # Chat icon, panel, polling, mark-as-read
 │   ├── habits.js
-│   ├── tasks.js            # Tasks, objectives, and voice notes on tasks
+│   ├── tasks.js            # Tasks, objectives, voice notes (recorder, waveform player, download)
 │   ├── planner.js          # Week strip + hour-by-hour day, planner_events
 │   ├── plans.js
 │   ├── wellbeing.js
@@ -85,7 +86,7 @@ One shared app, several **profiles**. A profile is a person (starts with two, mo
 
 **Rules:**
 - One JS module per section. No cross-imports between section modules — shared logic goes in `ui.js` or `constants.js`.
-- Every page `<head>` carries the same installable-app block right under `<title>` (manifest, icons, theme-color, service worker). A new page copies it. Those theme-color hex values are the one allowed exception to the tokens-only colour rule, because the browser reads them before CSS loads.
+- Every page `<head>` carries the same installable-app block right under `<title>` (manifest, icons, theme-color, `js/splash.js`, service worker). A new page copies it. `splash.js` must stay a plain synchronous `<script>`, not a module, so it runs before the first paint. Those theme-color hex values are the one allowed exception to the tokens-only colour rule, because the browser reads them before CSS loads.
 - Every page imports `auth.js` first and redirects to `index.html` if there's no session.
 - Never hardcode a dropdown option inside a page — it comes from `constants.js`.
 
@@ -143,7 +144,10 @@ task_audio (
   id uuid pk, task_id uuid references tasks(id) on delete cascade,
   path text unique, mime_type text,           -- bare type: 'audio/mp4' | 'audio/webm'
   duration_ms int check (duration_ms between 0 and 125000),  -- measured while recording
-  size_bytes int, created_at
+  size_bytes int,
+  peaks smallint[],   -- waveform bar heights 0–100 (~40), decoded once when recorded.
+                      -- Nullable: older notes are decoded on the fly, or get placeholder bars
+  created_at
 )
 
 -- planner_events: timed blocks on a day. end_time may be 24:00 (until midnight).
@@ -209,6 +213,12 @@ Storage follows the same rule: the `task-audio` bucket is private (5 MB per file
 
 ## 5. Screens
 
+### Opening splash (`js/splash.js`, phones only)
+When the app is opened as the installed home-screen app, or on a touch screen under 820px, a ~1.9s splash plays over the page: "Streak" rises in letter by letter, the accent dot drops in with a small bounce, the streak line draws left to right under the word, then it all fades out. Colours and type come from tokens only (`--bg`, `--text`, `--accent`, `--font-display`), and the last-used theme (`localStorage 'streak.theme'`) is applied before the first paint so dark mode gets a dark splash.
+- It plays once per launch, not once per page. The first page stores its start time in sessionStorage (`streak.splash`), and pages opened during the index → profiles → habits redirect continue the same animation with a negative `animation-delay` instead of restarting it.
+- A tap (or any key) skips it for the rest of the launch. It doesn't play when `data-motion="system"` is set and reduced motion is on, the same rule as every other animation.
+- It hangs off `<html>`, not `<body>`, because `<body>` doesn't exist yet when it runs and is `visibility: hidden` while `[data-booting]`.
+
 ### Login (`index.html`)
 Email + password via `supabase.auth.signInWithPassword`. Single centered card. Error states are specific ("That password doesn't match this email"), never "Something went wrong". No sign-up link — there is one shared account, created once in the Supabase dashboard.
 
@@ -227,7 +237,11 @@ Two halves on one page, both scoped to the active profile.
 
 **Tasks** — a quick-add input at the top: type a title, press enter, it's on the list. A checkbox completes it, done items strike through and collapse into a "Done today" group at the bottom. Each row shows its due date and a coloured priority dot; overdue dates are red. Filter by all / today / overdue / done.
 
-**Voice notes** — every task card has a mic button. Tapping it records (MediaRecorder; AAC-in-mp4 preferred because every browser, iPhone Safari included, can play it back, webm as the fallback) with a live timer and bar against the **2-minute cap**, where it stops and saves on its own. "Stop and save" uploads to the `task-audio` bucket and writes a `task_audio` row; "Discard" keeps nothing. Each note shows as a pill with a play/pause button and its duration, filling as it plays; one note plays at a time. A task can carry several. Deleting a note, a task, or a whole profile removes the files from storage before the rows, and if the files can't be removed the delete stops. Signed URLs are fetched in one batch on load, because iPhone Safari only starts audio inside the tap that asked for it.
+**Voice notes** — every task card has a mic button. Tapping it records (MediaRecorder; AAC-in-mp4 preferred because every browser, iPhone Safari included, can play it back, webm as the fallback) with a live timer and bar against the **2-minute cap**, where it stops and saves on its own. "Stop and save" uploads to the `task-audio` bucket and writes a `task_audio` row; "Discard" keeps nothing. A task can carry several.
+
+Each note is drawn like a chat-app voice message: play/pause, a waveform of thin bars that fills with the accent as it plays, the time under it (total length at rest, the position once it has one), and a speed pill (1× → 1.5× → 2×, remembered for the session in sessionStorage). The waveform is a slider: drag or tap anywhere on it with a finger or the mouse (pointer events, `touch-action: none`), with a round knob at the position; ←/→ move 5 seconds, Home/End jump to the ends. Dragging a note that isn't playing only moves its position. One note plays at a time, and a note you leave keeps its place. Bar heights come from `task_audio.peaks`, decoded with Web Audio when the note is recorded; notes without them are decoded once per visit, and if decoding fails they get even placeholder bars and still play and seek the same. On a phone-width list the note becomes one bubble with time, speed, download and delete on a row under the waveform; every target is at least 44px.
+
+**Download** sits next to delete. It fetches the file with `storage.download()` and names it `<task title> – voice note YYYY-MM-DD HH.MM.<m4a|webm>`, without the characters file systems refuse. On phones it opens the share sheet (`navigator.share` with the file), because a download link does nothing in the home-screen app and "Save to Files" lives there. If the tap's permission ran out during the download (`NotAllowedError`), the file is kept in memory and the toast asks for one more tap. Cancelling the sheet is silent. On computers it is an ordinary download. Deleting a note, a task, or a whole profile removes the files from storage before the rows, and if the files can't be removed the delete stops. Signed URLs are fetched in one batch on load, because iPhone Safari only starts audio inside the tap that asked for it.
 
 **Objectives** — cards, each with a title, a progress ring of current against target, the raw numbers under it ("12 / 30 trades"), and the deadline with days remaining. Editing an objective updates its current value. Achieved objectives move to a collapsed section.
 

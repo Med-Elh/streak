@@ -75,6 +75,7 @@
   --z-sticky: 100;
   --z-modal: 400;
   --z-toast: 500;
+  --z-splash: 900;    /* the opening splash covers everything, toasts included */
 
   /* ======================================================================
      LIGHT THEME (default)

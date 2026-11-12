@@ -11,8 +11,8 @@
  * is dropped and the picker takes over. Supabase stays the source of truth.
  */
 
-import { supabase, describeError } from './supabase.js?v=43';
-import { goTo, PICKER_PAGE } from './auth.js?v=43';
+import { supabase, describeError } from './supabase.js?v=44';
+import { goTo, PICKER_PAGE } from './auth.js?v=44';
 
 const ACTIVE_KEY = 'streak.active_profile';
 
