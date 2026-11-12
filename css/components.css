@@ -1968,7 +1968,9 @@
 
 /* ---- compare picker ------------------------------------------------------ */
 
-.picker {
+/* Not `.picker`: that is the profile picker's <body>, and sharing the name
+   turned the profiles page into a row of 260px columns on wide screens. */
+.compare-picker {
   display: grid;
   gap: var(--space-5);
   grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));

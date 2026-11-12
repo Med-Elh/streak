@@ -3,8 +3,8 @@
  * Every page imports this first: no session, no page.
  */
 
-import { supabase } from './supabase.js?v=44';
-import { initTheme } from './ui.js?v=44';
+import { supabase } from './supabase.js?v=45';
+import { initTheme } from './ui.js?v=45';
 
 const LOGIN_PAGE = 'index.html';
 const PICKER_PAGE = 'profiles.html';

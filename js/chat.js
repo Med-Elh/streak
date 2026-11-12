@@ -16,9 +16,9 @@
  * profiles, the icon is hidden entirely.
  */
 
-import { supabase, describeError } from './supabase.js?v=44';
-import { listProfiles } from './profiles.js?v=44';
-import { isOnline, presenceLabel } from './presence.js?v=44';
+import { supabase, describeError } from './supabase.js?v=45';
+import { listProfiles } from './profiles.js?v=45';
+import { isOnline, presenceLabel } from './presence.js?v=45';
 
 const POLL_MS = 15_000;
 const FIELDS  = 'id, sender_id, recipient_id, body, read_at, created_at';

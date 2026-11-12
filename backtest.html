@@ -18,7 +18,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Streak." />
   <!-- Opening splash on phones: classic script, so it runs before the first paint. -->
-  <script src="./js/splash.js?v=44"></script>
+  <script src="./js/splash.js?v=45"></script>
   <script>
     if ('serviceWorker' in navigator) {
       addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
@@ -31,9 +31,9 @@
     href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
     rel="stylesheet" />
 
-  <link rel="stylesheet" href="css/tokens.css?v=44" />
-  <link rel="stylesheet" href="css/base.css?v=44" />
-  <link rel="stylesheet" href="css/components.css?v=44" />
+  <link rel="stylesheet" href="css/tokens.css?v=45" />
+  <link rel="stylesheet" href="css/base.css?v=45" />
+  <link rel="stylesheet" href="css/components.css?v=45" />
 </head>
 
 <body>
@@ -407,7 +407,7 @@
           Read-only throughout. Nothing here writes to your backtests or your
           trading journal, and nothing moves between them.
         </p>
-        <div class="picker" id="compare-picker"></div>
+        <div class="compare-picker" id="compare-picker"></div>
       </section>
 
       <div class="legend" id="compare-legend"></div>
@@ -631,7 +631,7 @@
   </dialog>
 
   <script type="module">
-    import { initBacktestPage } from './js/backtest.js?v=44';
+    import { initBacktestPage } from './js/backtest.js?v=45';
     initBacktestPage();
   </script>
 </body>
