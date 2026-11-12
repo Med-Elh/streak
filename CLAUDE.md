@@ -86,7 +86,7 @@ One shared app, several **profiles**. A profile is a person (starts with two, mo
 
 **Rules:**
 - One JS module per section. No cross-imports between section modules — shared logic goes in `ui.js` or `constants.js`.
-- Every page `<head>` carries the same installable-app block right under `<title>` (manifest, icons, theme-color, `js/splash.js`, service worker). A new page copies it. `splash.js` must stay a plain synchronous `<script>`, not a module, so it runs before the first paint. Those theme-color hex values are the one allowed exception to the tokens-only colour rule, because the browser reads them before CSS loads.
+- Every page `<head>` carries the same installable-app block right under `<title>` (viewport meta, manifest, icons, theme-color, status-bar style, `js/splash.js`, service worker). A new page copies it. `splash.js` must stay a plain synchronous `<script>`, not a module, so it runs before the first paint. Those theme-color hex values are the one allowed exception to the tokens-only colour rule, because the browser reads them before CSS loads.
 - Every page imports `auth.js` first and redirects to `index.html` if there's no session.
 - Never hardcode a dropdown option inside a page — it comes from `constants.js`.
 
@@ -318,6 +318,13 @@ Non-negotiables for this project:
 - Avoid the AI-default looks: cream + serif + terracotta; near-black + acid green; broadsheet hairline rules.
 
 Quality floor, not negotiable: responsive to mobile, visible keyboard focus, `prefers-reduced-motion` respected, forms usable with keyboard only.
+
+**Mobile: it must feel like an installed app, not a web page.** Check every change on an iPhone, or at 375px and 390px with touch emulation:
+- **No zoom.** Every page's viewport meta is `width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover`, and `html` has `touch-action: manipulation`. On touch screens every input, select and textarea is at least `--text-field-touch` (16px); below that, iPhone Safari zooms in on focus and stays zoomed. That rule sits at the very end of `components.css`, so no field rule loaded after it can undercut it. Never give a field a smaller size on touch screens.
+- **No sideways scrolling.** `document.documentElement.scrollWidth` must equal the window width on every page. Fix overflow at its source: long rows (the nav, tables, the heatmap) scroll inside their own `overflow-x: auto` box. Decorations stay inside the page's width, and iPhone Safari ignores `overflow: hidden` on `<body>` for panning. `overflow-x: clip` on `html` and `body` is only a safety net. Use `clip`, never `hidden`, which would break `position: sticky`.
+- **No rubber-band bounce.** `overscroll-behavior: none` on `html` and `body`. Every inner scroller (chat thread, planner hours, modals, nav, tables) gets `overscroll-behavior: contain` (`-x` for the horizontal ones), so reaching its end doesn't move the page.
+- **Safe areas.** With `viewport-fit=cover` and the `black-translucent` status bar, the app runs under the notch and the home bar. Pad with the `--safe-top/right/bottom/left` tokens (`env(safe-area-inset-*)`): the top bar's background runs behind the status bar while its contents start below it, page bottoms and toasts clear the home bar, and pages without a top bar (login, profile picker) pad their own edges. `--topbar-row` is the bar's own row height. `--topbar-height` is the whole bar, notch included, and ui.js overwrites it with the measured height. Pin things below the bar with `--topbar-height`; never size the bar from it.
+- **Text on phones wraps rather than truncating to nothing.** Habit names take up to two lines (line-clamp 2) before an ellipsis.
 
 **Copy rules:** active voice, sentence case, plain verbs. Buttons say what happens ("Log trade", not "Submit"), and the confirmation matches the button ("Trade logged"). Errors say what went wrong and how to fix it. Empty states invite an action ("No trades yet. Log your first one." with the button right there), never just "No data".
 

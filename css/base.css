@@ -20,6 +20,17 @@ html {
      sticky banner set --sticky-top from JS once they know its height; on pages
      without one the fallback is just the top bar. */
   scroll-padding-top: calc(var(--sticky-top, var(--topbar-height)) + var(--space-3));
+
+  /* Behave like an app, not a web page, on a phone:
+     - manipulation: no double-tap zoom, and taps fire without waiting for one.
+     - overscroll none: no rubber-band bounce past either end of the page.
+     - overflow-x clip: a safety net. Nothing should be wider than the screen
+       (each case is fixed at its source), but if something ever is, it can't
+       be dragged into view. clip, not hidden, because hidden would make this
+       a scroll container and break every position: sticky below it. */
+  touch-action: manipulation;
+  overscroll-behavior: none;
+  overflow-x: clip;
 }
 :root[data-theme='dark'] { color-scheme: dark; }
 @media (prefers-color-scheme: dark) {
@@ -36,6 +47,8 @@ body {
   font-synthesis-weight: none;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  overscroll-behavior: none;
+  overflow-x: clip;
 }
 
 /* The session guard hides the page until auth.js has decided whether this
@@ -121,8 +134,12 @@ th.num {
   width: 100%;
   max-width: var(--page-max);
   margin-inline: auto;
-  padding-inline: var(--page-gutter);
-  padding-block: var(--space-6) var(--space-9);
+  /* The gutter, or the notch in landscape if that is wider; and room for the
+     home bar under the last thing on the page. */
+  padding-left: max(var(--page-gutter), var(--safe-left));
+  padding-right: max(var(--page-gutter), var(--safe-right));
+  padding-top: var(--space-6);
+  padding-bottom: calc(var(--space-9) + var(--safe-bottom));
 }
 
 .page-head {
@@ -266,11 +283,8 @@ th.num {
   }
   .btn--icon { width: 44px; }
   .swatch { width: 44px; height: 44px; }
-  /* iPhone Safari zooms the whole page into any field under 16px and leaves
-     it zoomed after you're done typing. */
-  .input,
-  .select,
-  .textarea { font-size: max(16px, var(--text-base)); }
+  /* Field text size on touch screens lives at the very end of
+     components.css: here it lost to the field rules loaded after it. */
   .task-row input[type='checkbox'],
   .rule input[type='checkbox'] {
     width: 24px;
@@ -289,7 +303,7 @@ th.num {
 @media (max-width: 420px) {
   :root { --page-gutter: var(--space-4); }
 
-  .page { padding-block: var(--space-5) var(--space-8); }
+  .page { padding-top: var(--space-5); padding-bottom: calc(var(--space-8) + var(--safe-bottom)); }
   .page-head { gap: var(--space-3); }
   .page-head h1 { font-size: var(--text-xl); }
 

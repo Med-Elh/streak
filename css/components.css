@@ -504,8 +504,12 @@
   display: flex;
   align-items: center;
   gap: var(--space-5);
-  height: var(--topbar-height);
-  padding-inline: var(--page-gutter);
+  /* The bar's background runs up behind the status bar and the notch; its
+     contents start below them. */
+  height: calc(var(--topbar-row) + var(--safe-top));
+  padding-top: var(--safe-top);
+  padding-left: max(var(--page-gutter), var(--safe-left));
+  padding-right: max(var(--page-gutter), var(--safe-right));
   background: var(--surface);
   border-bottom: var(--border-width) solid var(--border);
 }
@@ -536,16 +540,33 @@
 }
 
 @media (max-width: 640px) {
-  .topbar { height: auto; padding-block: var(--space-3); }
-  .topbar__inner { flex-wrap: wrap; }
-  .nav { order: 3; width: 100%; overflow-x: auto; }
+  .topbar {
+    height: auto;
+    padding-top: calc(var(--space-3) + var(--safe-top));
+    padding-bottom: var(--space-3);
+  }
+  .topbar__inner { flex-wrap: wrap; min-width: 0; }
+  /* The nav is wider than a phone: it scrolls inside its own row, and a
+     swipe that reaches its end stops there instead of dragging the page. */
+  .nav {
+    order: 3;
+    width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav a { flex-shrink: 0; white-space: nowrap; }
 }
 
 /* ==========================================================================
    Tables
    ========================================================================== */
 
-.table-wrap { overflow-x: auto; }
+/* Wide tables scroll inside themselves; reaching the edge doesn't hand the
+   swipe on to the page. */
+.table-wrap { overflow-x: auto; overscroll-behavior-x: contain; }
 
 .table {
   width: 100%;
@@ -611,6 +632,10 @@
      modal dialog, which pinned every modal to the top-left corner. */
   margin: auto;
   padding: 0;
+  /* A tall modal scrolls inside itself (the browser makes it a scroller);
+     hitting the end mustn't start scrolling the page behind the backdrop. */
+  max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - var(--space-6));
+  overscroll-behavior: contain;
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
@@ -649,8 +674,8 @@
 
 .toast-region {
   position: fixed;
-  bottom: var(--space-4);
-  right: var(--space-4);
+  bottom: calc(var(--space-4) + var(--safe-bottom));
+  right: calc(var(--space-4) + var(--safe-right));
   z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
@@ -792,21 +817,28 @@
   display: grid;
   place-items: center;
   min-height: 100dvh;
-  padding: var(--space-5);
+  padding:
+    calc(var(--space-5) + var(--safe-top))
+    calc(var(--space-5) + var(--safe-right))
+    calc(var(--space-5) + var(--safe-bottom))
+    calc(var(--space-5) + var(--safe-left));
   position: relative;
   overflow: hidden;
 }
-/* A single ember behind the card — the only decoration on the page. */
+/* A single ember behind the card — the only decoration on the page.
+   The box is exactly as wide as the page and the glow is sized inside it.
+   It used to be a 120vw square, and iPhone Safari ignores overflow: hidden on
+   <body> for panning: that square was empty space you could drag the login
+   page sideways into. Same glow, same size: radius min(333px, 53vw). */
 .auth-page::before {
   content: '';
   position: absolute;
   top: -18vh;
-  left: 50%;
-  width: min(760px, 120vw);
-  aspect-ratio: 1;
-  transform: translateX(-50%);
-  background: radial-gradient(circle,
-    rgb(var(--accent-rgb) / 0.14), transparent 62%);
+  left: 0;
+  right: 0;
+  height: min(760px, 120vw);
+  background: radial-gradient(circle min(333px, 53vw) at 50% 50%,
+    rgb(var(--accent-rgb) / 0.14), transparent);
   pointer-events: none;
 }
 
@@ -847,7 +879,11 @@
   display: grid;
   place-items: center;
   min-height: 100dvh;
-  padding: var(--space-6) var(--space-5);
+  padding:
+    calc(var(--space-6) + var(--safe-top))
+    calc(var(--space-5) + var(--safe-right))
+    calc(var(--space-6) + var(--safe-bottom))
+    calc(var(--space-5) + var(--safe-left));
 }
 .picker__inner { width: min(760px, 100%); }
 .picker__head { text-align: center; margin-bottom: var(--space-7); }
@@ -1053,12 +1089,12 @@
 .chat-panel {
   position: fixed;
   top: calc(var(--topbar-height) + var(--space-3));
-  right: var(--page-gutter);
+  right: max(var(--page-gutter), var(--safe-right));
   z-index: var(--z-modal);
   display: flex;
   flex-direction: column;
   width: min(390px, calc(100vw - var(--space-4) * 2));
-  height: min(560px, calc(100dvh - var(--topbar-height) - var(--space-6)));
+  height: min(560px, calc(100dvh - var(--topbar-height) - var(--space-6) - var(--safe-bottom)));
   overflow: hidden;
   background: var(--surface);
   border: var(--border-width) solid var(--border-strong);
@@ -1104,6 +1140,7 @@
 
 .chat-panel__tabs {
   display: flex;
+  overscroll-behavior-x: contain;
   gap: var(--space-1);
   padding: var(--space-2) var(--space-3);
   border-bottom: var(--border-width) solid var(--border-subtle);
@@ -1127,6 +1164,7 @@
 .chat-panel__thread {
   flex: 1 1 auto;
   overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -2236,7 +2274,7 @@
    ========================================================================== */
 
 .calm { --duration-base: 260ms; --duration-slow: 460ms; }
-.calm .page { padding-block: var(--space-7) var(--space-9); }
+.calm .page { padding-top: var(--space-7); padding-bottom: calc(var(--space-9) + var(--safe-bottom)); }
 .calm .stack-lg { gap: var(--space-6); }
 
 .card--calm {
@@ -3303,7 +3341,7 @@ body[data-figure='female'] .climb__bow { display: block; }
 
 /* A year of check-ins, GitHub style. Scrolls rather than squeezing. */
 .contrib { display: flex; flex-direction: column; gap: var(--space-2); }
-.contrib__scroll { overflow-x: auto; padding-bottom: var(--space-1); }
+.contrib__scroll { overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: var(--space-1); }
 .contrib__grid {
   display: grid;
   grid-auto-flow: column;
@@ -4156,7 +4194,8 @@ body[data-figure='female'] .climb__bow { display: block; }
 
   /* One tight row: icon + name | menu | check | chevron. The details (streak
      stats, week row, year heatmap) drop to their own full-width grid rows,
-     so the collapsed card is exactly one 56px line. */
+     so the collapsed card is one 56px row (a little taller when a long name
+     takes its second line). */
   .habit-card {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto auto auto;
@@ -4189,13 +4228,20 @@ body[data-figure='female'] .climb__bow { display: block; }
     align-items: center;
     min-width: 0;
   }
+  /* Two lines before anything is cut: "4h Deep work…" told you nothing.
+     A name longer than two lines ends in an ellipsis on the second. */
   .habit-card__name {
     flex: 1;
     min-width: 0;
     font-size: var(--text-base);
+    line-height: var(--leading-snug);
+    white-space: normal;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .habit-card__target { display: none; }
   .card-menu { grid-column: 3; }
@@ -5138,4 +5184,20 @@ body[data-figure='female'] .climb__bow { display: block; }
    the attribute on after the script ran. */
 @media (prefers-reduced-motion: reduce) {
   :root[data-motion='system'] .splash { display: none; }
+}
+
+/* ==========================================================================
+   Form fields on touch screens — keep this last in the file
+   iPhone Safari zooms the whole page in on any field under 16px and leaves it
+   zoomed when you're done, which is most of what made the app feel like a web
+   page. The rule used to live in base.css, where every field rule loaded after
+   it (.input at 15px, the inline Settings fields at 13px) quietly won. Here it
+   comes last, and :root raises it above any single-class field rule, so
+   nothing can undercut it. Desktop sizes are untouched.
+   ========================================================================== */
+
+@media (pointer: coarse) {
+  :root :is(input, select, textarea, .input, .select, .textarea) {
+    font-size: var(--text-field-touch);
+  }
 }

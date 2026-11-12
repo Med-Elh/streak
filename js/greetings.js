@@ -10,7 +10,7 @@
  * seeded set is a starting point rather than the whole vocabulary.
  */
 
-import { supabase, describeError } from './supabase.js?v=45';
+import { supabase, describeError } from './supabase.js?v=46';
 
 const LAST_KEY = 'streak.last_greeting';
 const SESSION_KEY = 'streak.greeting';

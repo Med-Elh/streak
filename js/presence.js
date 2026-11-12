@@ -13,8 +13,8 @@
  * competition board already shares.
  */
 
-import { supabase, describeError } from './supabase.js?v=45';
-import { listProfiles } from './profiles.js?v=45';
+import { supabase, describeError } from './supabase.js?v=46';
+import { listProfiles } from './profiles.js?v=46';
 
 /* ---------------------------------------------------------------- timing -- */
 
