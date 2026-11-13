@@ -19,7 +19,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Streak." />
   <!-- Opening splash on phones: classic script, so it runs before the first paint. -->
-  <script src="./js/splash.js?v=47"></script>
+  <script src="./js/splash.js?v=48"></script>
   <script>
     if ('serviceWorker' in navigator) {
       addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
@@ -32,9 +32,9 @@
     href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
     rel="stylesheet" />
 
-  <link rel="stylesheet" href="css/tokens.css?v=47" />
-  <link rel="stylesheet" href="css/base.css?v=47" />
-  <link rel="stylesheet" href="css/components.css?v=47" />
+  <link rel="stylesheet" href="css/tokens.css?v=48" />
+  <link rel="stylesheet" href="css/base.css?v=48" />
+  <link rel="stylesheet" href="css/components.css?v=48" />
 </head>
 
 <body class="auth-page">
@@ -83,8 +83,8 @@
   </main>
 
   <script type="module">
-    import { redirectIfSignedIn, signIn, goTo, PICKER_PAGE } from './js/auth.js?v=47';
-    import { showBanner, setBusy } from './js/ui.js?v=47';
+    import { redirectIfSignedIn, signIn, goTo, PICKER_PAGE } from './js/auth.js?v=48';
+    import { showBanner, setBusy } from './js/ui.js?v=48';
 
     // Already signed in? Straight to the picker; the form never renders.
     await redirectIfSignedIn();

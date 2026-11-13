@@ -18,7 +18,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Streak." />
   <!-- Opening splash on phones: classic script, so it runs before the first paint. -->
-  <script src="./js/splash.js?v=47"></script>
+  <script src="./js/splash.js?v=48"></script>
   <script>
     if ('serviceWorker' in navigator) {
       addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
@@ -31,9 +31,9 @@
     href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
     rel="stylesheet" />
 
-  <link rel="stylesheet" href="css/tokens.css?v=47" />
-  <link rel="stylesheet" href="css/base.css?v=47" />
-  <link rel="stylesheet" href="css/components.css?v=47" />
+  <link rel="stylesheet" href="css/tokens.css?v=48" />
+  <link rel="stylesheet" href="css/base.css?v=48" />
+  <link rel="stylesheet" href="css/components.css?v=48" />
 </head>
 
 <body>
@@ -142,8 +142,48 @@
     </form>
   </dialog>
 
+  <dialog class="modal" id="task-modal" aria-labelledby="task-modal-title">
+    <form id="task-form" novalidate>
+      <div class="modal__head">
+        <h2 class="modal__title" id="task-modal-title">Edit task</h2>
+        <button class="btn btn--icon" type="button" id="task-close" aria-label="Close">×</button>
+      </div>
+
+      <div class="modal__body stack">
+        <p class="banner banner--error" id="task-error" role="alert" hidden></p>
+
+        <div class="field">
+          <label class="label" for="task-title-input">Task</label>
+          <input class="input" id="task-title-input" maxlength="200" required autocomplete="off" />
+        </div>
+
+        <div class="entry-form">
+          <div class="field">
+            <label class="label" for="task-priority">Priority</label>
+            <select class="select" id="task-priority"></select>
+          </div>
+
+          <div class="field">
+            <label class="label" for="task-due">Due date <span class="faint">(optional)</span></label>
+            <input class="input" type="date" id="task-due" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="label" for="task-notes">Notes <span class="faint">(optional)</span></label>
+          <textarea class="textarea" id="task-notes" maxlength="1000"></textarea>
+        </div>
+      </div>
+
+      <div class="modal__foot">
+        <button class="btn btn--secondary" type="button" id="task-cancel">Cancel</button>
+        <button class="btn btn--primary" type="submit" id="task-submit">Save task</button>
+      </div>
+    </form>
+  </dialog>
+
   <script type="module">
-    import { initTasksPage } from './js/tasks.js?v=47';
+    import { initTasksPage } from './js/tasks.js?v=48';
     initTasksPage();
   </script>
 </body>

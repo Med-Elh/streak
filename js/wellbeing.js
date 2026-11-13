@@ -7,15 +7,15 @@
  * you don't.
  */
 
-import { supabase, describeError } from './supabase.js?v=47';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=47';
-import { requireActiveProfile } from './profiles.js?v=47';
+import { supabase, describeError } from './supabase.js?v=48';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=48';
+import { requireActiveProfile } from './profiles.js?v=48';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy,
   todayISO, formatDate, applyProfileTheme, beat,
-} from './ui.js?v=47';
-import { FEELINGS, INTENSITY_LABELS, feeling } from './constants.js?v=47';
-import { moodLineChart, destroyChart } from './charts.js?v=47';
+} from './ui.js?v=48';
+import { FEELINGS, INTENSITY_LABELS, feeling } from './constants.js?v=48';
+import { moodLineChart, destroyChart } from './charts.js?v=48';
 
 const LAST_REFLECTION_KEY = 'streak.last_reflection';
 /** Four bands, so a week reads as a shape rather than 168 cells. */
@@ -26,7 +26,7 @@ const BANDS = [
   { key: 'night', label: 'Night', from: 22, to: 5 },
 ];
 
-import { mountGreeting } from './greetings.js?v=47';
+import { mountGreeting } from './greetings.js?v=48';
 
 const state = {
   profile: null,

@@ -6,17 +6,17 @@
  * and the deadline rather than a checkbox.
  */
 
-import { supabase, describeError } from './supabase.js?v=47';
-import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=47';
-import { requireActiveProfile } from './profiles.js?v=47';
+import { supabase, describeError } from './supabase.js?v=48';
+import { requireSession, signOut, goTo, PICKER_PAGE } from './auth.js?v=48';
+import { requireActiveProfile } from './profiles.js?v=48';
 import {
   el, clear, toast, topbar, emptyState, skeletonList, setBusy, showBanner,
   statRing, formatDate, todayISO, beat,
   applyProfileTheme,
-} from './ui.js?v=47';
-import { PRIORITIES, OBJECTIVE_STATUSES, OBJECTIVE_UNITS, options, labelFor } from './constants.js?v=47';
+} from './ui.js?v=48';
+import { PRIORITIES, OBJECTIVE_STATUSES, OBJECTIVE_UNITS, options, labelFor } from './constants.js?v=48';
 
-import { mountGreeting } from './greetings.js?v=47';
+import { mountGreeting } from './greetings.js?v=48';
 
 const state = {
   profile: null,
@@ -33,6 +33,8 @@ const state = {
   positions: new Map(), // note id → ms, where each note not currently loaded was left
   downloads: new Map(), // note id → File, fetched but not yet handed to the share sheet
   speed: 1,
+  expanded: new Set(),  // task ids whose voice notes are open; closed is the default
+  editingTask: null,    // id of the task in the edit dialog
 };
 
 let refs = {};
@@ -525,14 +527,26 @@ function taskRow(task) {
                 }))
           : null,
       ]),
+      // Its own element after the meta, not inside it: on a phone the card
+      // becomes a grid and the pill moves to the row with the buttons.
+      state.notesReady ? audioToggle(task) : null,
     ]),
+    // Icons rather than words: three labelled words would leave a phone's
+    // title column about 80px. Each has its name in aria-label and title.
     el('div', { class: 'task-card__actions' }, [
       state.notesReady ? micButton(task) : null,
-      el('button', {
-        class: 'btn btn--ghost btn--sm',
-        type: 'button',
-        text: 'Delete',
-        'aria-label': `Delete ${task.title}`,
+      iconButton({
+        className: 'task-edit',
+        svg: EDIT_SVG,
+        label: `Edit ${task.title}`,
+        title: 'Edit task',
+        onclick: () => openTaskEditor(task),
+      }),
+      iconButton({
+        className: 'task-delete',
+        svg: TRASH_SVG,
+        label: `Delete ${task.title}`,
+        title: 'Delete task',
         onclick: () => removeTask(task),
       }),
     ]),
@@ -541,8 +555,10 @@ function taskRow(task) {
   // Notes and the recorder get a row of their own under the title, rather
   // than sharing the title's column: on a phone that column is ~130px once
   // the checkbox and buttons have their share, too narrow for either.
+  // The notes stay folded away behind the pill in the meta line until asked
+  // for, so a task with three recordings is still one line in the list.
   const recording = state.recording?.taskId === task.id;
-  const notes = voiceNotes(task);
+  const notes = state.expanded.has(task.id) ? voiceNotes(task) : null;
   if (notes || recording) {
     card.append(el('div', { class: 'task-card__extras' }, [
       notes,
@@ -581,7 +597,91 @@ function micButton(task) {
 function voiceNotes(task) {
   const notes = notesFor(task.id);
   if (!notes.length) return null;
-  return el('ul', { class: 'voice-notes', 'aria-label': 'Voice notes' }, notes.map((note) => noteChip(note, task)));
+  return el('ul', { class: 'voice-notes', id: `notes-${task.id}`, 'aria-label': 'Voice notes' },
+    notes.map((note) => noteChip(note, task)));
+}
+
+const EDIT_SVG = `
+<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"
+  stroke-linecap="round" stroke-linejoin="round">
+  <path d="M4.5 19.5h4l10-10a2.1 2.1 0 0 0-4-4l-10 10v4Z" /><path d="m13.5 6.5 4 4" />
+</svg>`;
+
+const TRASH_SVG = `
+<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"
+  stroke-linecap="round" stroke-linejoin="round">
+  <path d="M4.5 7h15M10 7V4.5h4V7M6.5 7l1 12.5h9l1-12.5M10.5 11v5M13.5 11v5" />
+</svg>`;
+
+/* A sound-wave mark: "this task has something to listen to". */
+const WAVE_SVG = `
+<svg class="audio-toggle__wave" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor"
+  stroke-width="2" stroke-linecap="round">
+  <path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2" />
+</svg>`;
+
+const CHEVRON_SVG = `
+<svg class="audio-toggle__chevron" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor"
+  stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="m7 10 5 5 5-5" />
+</svg>`;
+
+function iconButton({ className, svg, label, title, onclick }) {
+  const button = el('button', {
+    class: `btn btn--icon btn--sm ${className}`,
+    type: 'button',
+    'aria-label': label,
+    title,
+    onclick,
+  });
+  button.innerHTML = svg;
+  return button;
+}
+
+/**
+ * The sign that a task has voice notes, and the way to them: a pill in the
+ * meta line with the count and the total length. One tap opens the players
+ * under the task; another folds them away.
+ */
+function audioToggle(task) {
+  const notes = notesFor(task.id);
+  if (!notes.length) return null;
+
+  const open = state.expanded.has(task.id);
+  const total = notes.reduce((sum, n) => sum + (Number(n.duration_ms) || 0), 0);
+  const what = notes.length === 1 ? 'voice note' : `${notes.length} voice notes`;
+
+  const button = el('button', {
+    class: 'audio-toggle',
+    type: 'button',
+    'aria-expanded': String(open),
+    'aria-controls': `notes-${task.id}`,
+    'aria-label': `${open ? 'Hide' : 'Play'} the ${what} on ${task.title}, ${spokenDuration(total)}`,
+    title: open ? 'Hide voice notes' : 'Show voice notes',
+    onclick: () => toggleNotes(task),
+  });
+  button.innerHTML = WAVE_SVG;
+  // Filtered: the DOM's own append() prints a null child as the text "null".
+  button.append(...[
+    el('span', { class: 'audio-toggle__label', text: notes.length === 1 ? 'Voice note' : what }),
+    el('span', { class: 'audio-toggle__time num', text: formatDuration(total) }),
+    // Phones drop the words for room and keep the count as "×2".
+    notes.length > 1 ? el('span', { class: 'audio-toggle__count num', text: `×${notes.length}` }) : null,
+  ].filter(Boolean));
+  button.insertAdjacentHTML('beforeend', CHEVRON_SVG);
+  return button;
+}
+
+function toggleNotes(task) {
+  if (state.expanded.has(task.id)) {
+    state.expanded.delete(task.id);
+    // A note can't keep playing once its player is folded away out of reach.
+    if (notesFor(task.id).some((n) => n.id === player.noteId)) stopPlayback();
+  } else {
+    state.expanded.add(task.id);
+  }
+  renderTasks();
+  focusIn(task.id, '.audio-toggle');
 }
 
 const DOWNLOAD_SVG = `
@@ -1070,6 +1170,8 @@ async function finishRecording(rec) {
 
   try {
     await saveNote(rec.task, blob, rec.elapsed);
+    // Open the task's notes, so the one just recorded is right there.
+    state.expanded.add(rec.taskId);
     done(rec.capped ? 'Two minutes is the limit, so it stopped there. Voice note saved.' : 'Voice note saved.', 'success');
   } catch (error) {
     done(error.message, 'error');
@@ -1817,6 +1919,65 @@ async function createObjective(event) {
   }
 }
 
+/* -------------------------------------------------------------- edit task -- */
+
+function openTaskEditor(task) {
+  state.editingTask = task.id;
+  refs.taskTitle.value = task.title;
+  refs.taskPriority.value = task.priority;
+  refs.taskDue.value = task.due_date ?? '';
+  refs.taskNotes.value = task.notes ?? '';
+  showBanner(refs.taskError, null);
+  refs.taskModal.showModal();
+  refs.taskTitle.focus();
+}
+
+async function saveTask(event) {
+  event.preventDefault();
+  const task = state.tasks.find((t) => t.id === state.editingTask);
+  if (!task) {
+    refs.taskModal.close();
+    toast('That task no longer exists. It may have been deleted on another device.', { type: 'error' });
+    return;
+  }
+
+  const title = refs.taskTitle.value.trim();
+  if (!title) {
+    showBanner(refs.taskError, 'Give the task a title.');
+    refs.taskTitle.focus();
+    return;
+  }
+  showBanner(refs.taskError, null);
+
+  setBusy(refs.taskSubmit, true, 'Saving…');
+  try {
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({
+        title,
+        priority: refs.taskPriority.value,
+        due_date: refs.taskDue.value || null,
+        notes: refs.taskNotes.value.trim() || null,
+      })
+      .eq('id', task.id)
+      .select('id, title, notes, due_date, priority, done, completed_at, created_at')
+      .single();
+
+    if (error) {
+      showBanner(refs.taskError, describeError(error, 'Couldn’t save that task. Try again.'));
+      return;
+    }
+
+    Object.assign(task, data);
+    refs.taskModal.close();
+    renderTasks();
+    focusIn(task.id, '.task-edit');
+    toast('Task saved.', { type: 'success', duration: 2000 });
+  } finally {
+    setBusy(refs.taskSubmit, false);
+  }
+}
+
 function openObjectiveModal() {
   refs.objectiveForm.reset();
   showBanner(refs.objectiveError, null);
@@ -1865,12 +2026,21 @@ export async function initTasksPage() {
     objectiveDeadline: document.getElementById('objective-deadline'),
     objectiveNotes: document.getElementById('objective-notes'),
     objectiveSubmit: document.getElementById('objective-submit'),
+    taskModal: document.getElementById('task-modal'),
+    taskForm: document.getElementById('task-form'),
+    taskError: document.getElementById('task-error'),
+    taskTitle: document.getElementById('task-title-input'),
+    taskPriority: document.getElementById('task-priority'),
+    taskDue: document.getElementById('task-due'),
+    taskNotes: document.getElementById('task-notes'),
+    taskSubmit: document.getElementById('task-submit'),
   };
 
   document.getElementById('profile-name').textContent = profile.name;
 
   for (const priority of options(PRIORITIES)) {
     refs.quickPriority.append(el('option', { value: priority.value, text: priority.label }));
+    refs.taskPriority.append(el('option', { value: priority.value, text: priority.label }));
   }
   refs.quickPriority.value = 'medium';
 
@@ -1943,6 +2113,20 @@ function wireControls() {
   document.getElementById('objective-cancel').addEventListener('click', () => refs.objectiveModal.close());
   document.getElementById('objective-close').addEventListener('click', () => refs.objectiveModal.close());
   refs.objectiveForm.addEventListener('submit', createObjective);
+
+  refs.taskForm.addEventListener('submit', saveTask);
+  document.getElementById('task-cancel').addEventListener('click', () => refs.taskModal.close());
+  document.getElementById('task-close').addEventListener('click', () => refs.taskModal.close());
+  // However it closes (Cancel, ×, Esc, or after saving), focus goes back to
+  // the task's own edit button rather than the top of the page.
+  refs.taskModal.addEventListener('close', () => {
+    // The close event is queued, so it can land after the dialog has already
+    // been opened again (closed and Edit tapped straight away). Acting on it
+    // then would forget which task is being edited and steal the focus.
+    if (refs.taskModal.open) return;
+    if (state.editingTask) focusIn(state.editingTask, '.task-edit');
+    state.editingTask = null;
+  });
 
   // Leaving mid-recording must not leave the microphone open behind you.
   window.addEventListener('pagehide', () => {
